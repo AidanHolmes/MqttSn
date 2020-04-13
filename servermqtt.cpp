@@ -678,7 +678,6 @@ void ServerMqttSn::received_willmsg(uint8_t *sender_address, uint8_t *data, uint
   }
 
   // Client sent final will message
-  complete_client_connection(con) ;
   buff[0] = MQTT_RETURN_ACCEPTED ;
   writemqtt(con, MQTT_CONNACK, buff, 1) ;  
   if (con->get_send_topics()) // Start sending topics or set activity to none
