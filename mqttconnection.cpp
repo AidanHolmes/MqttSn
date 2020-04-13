@@ -41,6 +41,7 @@ MqttConnection::MqttConnection(){
   m_willtopicsize = 0 ;
   m_willmessagesize = 0 ;
   m_willtopic[0] = '\0' ;
+  m_sendtopics = false ;
 }
 
 void MqttConnection::update_activity()

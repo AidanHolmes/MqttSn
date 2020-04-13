@@ -110,6 +110,9 @@ public:
   uint8_t get_pub_topic_type() ;
   int get_mosquitto_mid() ;
 
+  void set_send_topics(bool b){m_sendtopics = b;}
+  bool get_send_topics(){return m_sendtopics ;}
+  
   void set_gwid(uint8_t gwid){m_gwid = gwid;}
   uint8_t get_gwid(){return m_gwid;}
   MqttConnection *next; // linked list of connections (gw only)
@@ -167,6 +170,9 @@ protected:
   size_t m_willmessagesize ;
   uint8_t m_willtopicqos ;
   bool m_willtopicretain ;
+
+  // Reconnect to dirty conn
+  bool m_sendtopics ;
 
 };
 

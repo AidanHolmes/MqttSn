@@ -349,6 +349,7 @@ void ServerMqttSn::received_regack(uint8_t *sender_address, uint8_t *data, uint8
       }else{
 	// Finished all topics
 	con->set_activity(MqttConnection::Activity::none) ;
+	con->set_send_topics(false);
       }
     }
   }
@@ -538,12 +539,16 @@ void ServerMqttSn::received_connect(uint8_t *sender_address, uint8_t *data, uint
   con->set_client_id(szClientID) ;
   con->duration = (data[2] << 8) | data[3] ; // MSB assumed
   con->set_address(sender_address, m_pDriver->get_address_len()) ;
-
+  con->set_send_topics(false) ;
+  
   // If clean flag is set then remove all topics and will data
   if (((FLAG_CLEANSESSION & data[0]) > 0)){
     con->topics.free_topics() ;
     con->set_will_topic(NULL, 0, false);
     con->set_will_message(NULL, 0) ;
+  }else{
+    // resume old connection and send topics after connection setup
+    con->set_send_topics(true) ;
   }
     
   // If WILL if flagged then set the flags for the message and topic
@@ -561,12 +566,9 @@ void ServerMqttSn::received_connect(uint8_t *sender_address, uint8_t *data, uint
     uint8_t buff[1] ;
     buff[0] = MQTT_RETURN_ACCEPTED ;
     writemqtt(con, MQTT_CONNACK, buff, 1) ;
+    if (con->get_send_topics()) // Start sending topics or set activity to none
+      complete_client_connection(con) ;
   }
-  if (!(FLAG_CLEANSESSION & data[0])){
-    // session is not clean, check and send out topics
-    complete_client_connection(con) ;
-  }
-
 }
 
 void ServerMqttSn::complete_client_connection(MqttConnection *p)
@@ -674,11 +676,13 @@ void ServerMqttSn::received_willmsg(uint8_t *sender_address, uint8_t *data, uint
       EPRINT("WILLMESSAGE: Failed to set the will message for connection!\n") ;
     }
   }
-  // TO DO: Check state, handle if connecting or connected!
+
   // Client sent final will message
   complete_client_connection(con) ;
   buff[0] = MQTT_RETURN_ACCEPTED ;
   writemqtt(con, MQTT_CONNACK, buff, 1) ;  
+  if (con->get_send_topics()) // Start sending topics or set activity to none
+    complete_client_connection(con) ;
 }
 
 void ServerMqttSn::received_disconnect(uint8_t *sender_address, uint8_t *data, uint8_t len)
