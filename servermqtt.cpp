@@ -566,8 +566,8 @@ void ServerMqttSn::received_connect(uint8_t *sender_address, uint8_t *data, uint
     uint8_t buff[1] ;
     buff[0] = MQTT_RETURN_ACCEPTED ;
     writemqtt(con, MQTT_CONNACK, buff, 1) ;
-    if (con->get_send_topics()) // Start sending topics or set activity to none
-      complete_client_connection(con) ;
+    con->set_state(MqttConnection::State::connected) ;
+    con->set_activity(MqttConnection::Activity::none) ;
   }
 }
 
@@ -617,7 +617,8 @@ void ServerMqttSn::received_willtopic(uint8_t *sender_address, uint8_t *data, ui
     con->set_will_topic(NULL,0,false);
     EPRINT("WILLTOPIC: received zero len topic\n") ; 
     buff[0] = MQTT_RETURN_ACCEPTED ;
-    complete_client_connection(con) ;
+    con->set_state(MqttConnection::State::connected) ;
+    con->set_activity(MqttConnection::Activity::none) ;
     writemqtt(con, MQTT_CONNACK, buff, 1) ;
   }else{
     memcpy(utf8, data+1, len-1) ;
@@ -679,9 +680,9 @@ void ServerMqttSn::received_willmsg(uint8_t *sender_address, uint8_t *data, uint
 
   // Client sent final will message
   buff[0] = MQTT_RETURN_ACCEPTED ;
-  writemqtt(con, MQTT_CONNACK, buff, 1) ;  
-  if (con->get_send_topics()) // Start sending topics or set activity to none
-    complete_client_connection(con) ;
+  writemqtt(con, MQTT_CONNACK, buff, 1) ;
+  con->set_state(MqttConnection::State::connected) ;
+  con->set_activity(MqttConnection::Activity::none) ;
 }
 
 void ServerMqttSn::received_disconnect(uint8_t *sender_address, uint8_t *data, uint8_t len)
@@ -881,6 +882,12 @@ void ServerMqttSn::connection_watchdog(MqttConnection *p)
       p->set_state(MqttConnection::State::disconnected);
       p->set_activity(MqttConnection::Activity::none);
     }
+    break;
+  case MqttConnection::Activity::none:
+    // Is there a need to send all topics out?
+    if (p->get_send_topics())
+      complete_client_connection(p) ;
+    
     break;
   default:
     break;
