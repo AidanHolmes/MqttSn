@@ -560,8 +560,11 @@ void ServerMqttSn::received_connect(uint8_t *sender_address, uint8_t *data, uint
     // No need for WILL setup, just CONNACK
     uint8_t buff[1] ;
     buff[0] = MQTT_RETURN_ACCEPTED ;
-    complete_client_connection(con) ;
     writemqtt(con, MQTT_CONNACK, buff, 1) ;
+  }
+  if (!(FLAG_CLEANSESSION & data[0])){
+    // session is not clean, check and send out topics
+    complete_client_connection(con) ;
   }
 
 }
