@@ -351,6 +351,8 @@ void ServerMqttSn::received_regack(uint8_t *sender_address, uint8_t *data, uint8
 	con->set_activity(MqttConnection::Activity::none) ;
 	con->set_send_topics(false);
       }
+    }else if(con->get_activity() == MqttConnection::Activity::registering){
+      con->set_activity(MqttConnection::Activity::none) ;
     }
   }
 
@@ -954,8 +956,10 @@ bool ServerMqttSn::register_topic(MqttConnection *con, MqttTopic *t)
   size_t len = strlen(sz) ;
   memcpy(buff+4, sz, len) ; 
   if (writemqtt(con, MQTT_REGISTER, buff, 4+len)){
-    // Cache the message
-    con->set_activity(MqttConnection::Activity::registering) ;
+    if (con->get_activity() != MqttConnection::Activity::registeringall){
+      // If not registering all topics then watch for single topic
+      con->set_activity(MqttConnection::Activity::registering) ;
+    }
     return true ;
   }
   return false ;
