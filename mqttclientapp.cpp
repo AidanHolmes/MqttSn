@@ -71,6 +71,7 @@ void connect(char params[][30], int count)
 {
   uint8_t gw = 0;
   bool will = false ;
+  bool clean = true ;
   
   if (!pradio->get_known_gateway(&gw)){
     printf("Cannot connect, no known gateway\n") ;
@@ -86,8 +87,12 @@ void connect(char params[][30], int count)
     pradio->set_willtopic((char *)NULL,0) ;
     pradio->set_willmessage(NULL,0) ;
   }
+
+  if (count == 3 && params[2][0] == 'n'){
+    clean = false ;
+  }
   
-  if (!pradio->connect(gw, will, true, 30)){
+  if (!pradio->connect(gw, will, clean, 30)){
     printf("Connecting to gateway %u\n", gw) ;
   }
 }

@@ -144,10 +144,10 @@ void ServerMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
     }
     if (ret != MOSQ_ERR_SUCCESS)
       EPRINT("Mosquitto QoS -1 publish failed with code %d\n", ret) ;
-    //DPRINT("Sending Mosquitto QoS -1 publish with mid %d\n", mid) ;
     return ;    
   }
 
+  // Not a QoS -1 message, search for connection
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     EPRINT("No registered connection for client\n") ;
@@ -814,6 +814,7 @@ void ServerMqttSn::send_will(MqttConnection *con)
 
   int mid = 0 ;
   if (strlen(con->get_will_topic()) > 0){
+    pthread_mutex_lock(&m_mosquittolock) ;
     int ret = mosquitto_publish(m_pmosquitto,
 				&mid,
 				con->get_will_topic(),
@@ -823,7 +824,11 @@ void ServerMqttSn::send_will(MqttConnection *con)
 				con->get_will_retain()) ;
     if (ret != MOSQ_ERR_SUCCESS){
       EPRINT("Sending WILL: Mosquitto publish failed with code %d\n", ret);
+    }else{
+      con->set_mosquitto_mid(mid) ;
     }
+    pthread_mutex_unlock(&m_mosquittolock) ;
+
     DPRINT("Sending Mosquitto WILL publish with mid %d\n", mid) ;
   }
 }
@@ -880,9 +885,6 @@ void ServerMqttSn::connection_watchdog(MqttConnection *p)
 
 bool ServerMqttSn::manage_connections()
 {
-
-  // TO DO. Check all client connections and
-  // send disconnects if client is not alive
   MqttConnection *p = NULL ;
   for(p = m_connection_head; p != NULL; p=p->next){
     switch(p->get_state()){

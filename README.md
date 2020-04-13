@@ -75,3 +75,4 @@ The code is still work in-progress, but hoping to be complete soon following a h
 * Client and server does not implement any random delays in responses as suggested
 * Congestion messages are not processed by the client code automatically, although the codes are exposed for user specific behaviour to be adjusted
 * Clients will try any gateway available, regardless of any recent connection issues to a previously connected gateway
+* Only clients ping gateways, the gateway will not check all clients with a ping, but will timout if a ping has not been received in enough time. This prevents conjestion
