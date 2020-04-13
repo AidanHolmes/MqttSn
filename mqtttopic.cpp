@@ -136,6 +136,7 @@ uint16_t MqttTopicCollection::add_topic(const char *sztopic, uint16_t messageid)
     // No topics in collection.
     // Create the head topic. Always index 1
     topics = new MqttTopic(1, messageid, sztopic) ;
+    topics->complete(1) ;
     return 1;
   }
   for (p = topics; p; p = p->next()){

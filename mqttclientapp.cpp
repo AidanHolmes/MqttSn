@@ -179,13 +179,13 @@ void publish(char params[][30], int count)
     if (b_strtopic){
       pradio->publish_noqos(gwid, params[1], (uint8_t *)params[2], strlen(params[2]), b_retain);
     }else{
-      pradio->publish_noqos(gwid, atoi(params[1]), 1, (uint8_t *)params[2], strlen(params[2]), b_retain);
+      pradio->publish_noqos(gwid, atoi(params[1]), FLAG_DEFINED_TOPIC_ID, (uint8_t *)params[2], strlen(params[2]), b_retain);
     }
   }else{
     if (b_strtopic){
       pradio->publish(qos, params[1], (uint8_t *)params[2], strlen(params[2]), b_retain);
     }else{
-      pradio->publish(qos, (uint16_t)atoi(params[1]), 1, (uint8_t *)params[2], strlen(params[2]), b_retain);
+      pradio->publish(qos, (uint16_t)atoi(params[1]), FLAG_NORMAL_TOPIC_ID, (uint8_t *)params[2], strlen(params[2]), b_retain);
     }
   }
 }
