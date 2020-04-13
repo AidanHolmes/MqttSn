@@ -166,8 +166,6 @@ void ServerMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
 			data[0] & FLAG_RETAIN);
   if (!server_publish(con)){
     EPRINT("Could not complete the PUBLISH message with the MQTT server\n") ;
-    buff[4] = MQTT_RETURN_CONGESTION;
-    writemqtt(con, MQTT_PUBACK, buff, 5) ;
     return ;  
   }
   
