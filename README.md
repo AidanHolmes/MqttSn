@@ -19,19 +19,18 @@ Supported drivers
 The code was originally written for just RF24 radio comms and has since been refactored to be driver agnostic.
 
 ## How to build
-The code depends on a driver framework (code avaialble from github).
-Required code should be cloned from github
-[Hardware Framework](https://github.com/AidanHolmes/PiHardware)
+The code depends on a driver framework (code avaialble from github).  
+Required code should be cloned from github  
+[Hardware Framework](https://github.com/AidanHolmes/PiHardware)  
 `> git clone https://github.com/AidanHolmes/PiHardware hardware`
 
-[Nordic RF24 Driver](https://github.com/AidanHolmes/NordicRF24)
+[Nordic RF24 Driver](https://github.com/AidanHolmes/NordicRF24)  
 `> git clone https://github.com/AidanHolmes/NordicRF24 NordicRF24`
 
-The standard Makefiles assume that these are all installed as siblings for the build. Adjust Makefile for alternative locations of files.
-
+The standard Makefiles assume that these are all installed as siblings for the build. Adjust Makefile for alternative locations of files.  
 Finally clone this repository (as a sibling to the other project directories)
 
-Build the code from Linux in this repository by running
+Build the code from Linux in this repository by running  
 `> make`
 
 ## Using example code
@@ -43,15 +42,16 @@ Both take parameters for the RF24 driver which gives some flexibility when wirin
 
 ### Client and server parameters
 Usage:  -c ce -i irq -a address -b address [-n clientname] [-o channel] [-s 250|1|2] [-x]
-Options:
--c GPIO CE pin for RF24
--i Interrupt pin for RF24
--a Address of device
--b Broadcast address for whole radio network (should match other devices in network)
--n Client name (optional, client only)
--o Channel 0 to 125 for RF24 (optional)
--s Speed 250KBit, 1MBit, 2MBit for RF24 (optional)
--x Enable ACKs for RF24 (optional)
+
+Options:  
+-c GPIO CE pin for RF24  
+-i Interrupt pin for RF24  
+-a Address of device  
+-b Broadcast address for whole radio network (should match other devices in network)  
+-n Client name (optional, client only)  
+-o Channel 0 to 125 for RF24 (optional)  
+-s Speed 250KBit, 1MBit, 2MBit for RF24 (optional)  
+-x Enable ACKs for RF24 (optional)  
 
 ## Limitations
 Small AtMega 328 devices with only 2k SRAM are not big enough to run this code alongside an appropriate driver. Many optimisations can be made to shrink the memory footprint, but I suspect that even getting down to 2k will not allow enough room for any practical use of the code.

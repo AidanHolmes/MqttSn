@@ -6,6 +6,8 @@
 *.lo
 *.o
 *.obj
+mqttsnserver
+mqttsnclient
 
 # Precompiled Headers
 *.gch
