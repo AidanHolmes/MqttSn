@@ -320,6 +320,7 @@ int main(int argc, char **argv)
   // 1 MHz = 1000 KHz
   spi.setSpeed(6000000) ;
   drv.set_spi(&spi) ;
+  drv.set_timer(&pi);
 
   if (!drv.set_gpio(&pi, opt_ce, opt_irq)){
     fprintf(stderr, "Failed to initialise GPIO\n") ;
@@ -327,14 +328,13 @@ int main(int argc, char **argv)
   }
   
   drv.reset_rf24();
-
+  mqtt.set_driver(&drv) ;
 
   if (opt_cname)
     mqtt.set_client_id(szclientid);
   else
     mqtt.set_client_id("CL") ;
 
-  mqtt.set_driver(&drv) ;
   mqtt.initialise(ADDR_WIDTH, rf24broadcast, rf24address) ;
   // Link layer specific options
   drv.set_channel(opt_channel) ; // 2.400GHz + channel MHz

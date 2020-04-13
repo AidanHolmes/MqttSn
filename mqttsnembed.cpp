@@ -54,7 +54,7 @@ bool MqttSnEmbed::m_fn_packet_received(void *pContext, uint8_t *sender_addr, uin
   uint8_t *mqtt_payload = packet+MQTT_HDR_LEN ;
 
   // Queue the message and exit
-  ((MqttSnEmbed *)(pContext))->queue_received(sender_addr, messageid, mqtt_payload, length) ;
+  ((MqttSnEmbed *)(pContext))->queue_received(sender_addr, messageid, mqtt_payload, length-MQTT_HDR_LEN) ;
   return true ;
 }
 
