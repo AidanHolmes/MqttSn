@@ -583,6 +583,7 @@ void ServerMqttSn::complete_client_connection(MqttConnection *p)
   if ((t=p->topics.get_curr_topic())){
     // Topics are set on the connection
     p->set_activity(MqttConnection::Activity::registeringall) ;
+    DPRINT("Registering topic to client %s\n", t->get_topic()) ;
     if (!register_topic(p, t)){
       EPRINT("Failed to send client topic id %u, name %s\n",
 	     t->get_id(), t->get_topic()) ;
@@ -886,10 +887,10 @@ void ServerMqttSn::connection_watchdog(MqttConnection *p)
     }
     break;
   case MqttConnection::Activity::none:
-    // Is there a need to send all topics out?
-    if (p->get_send_topics())
+    // Is there a need to send all topics out following connection?
+    if (p->get_send_topics()){
       complete_client_connection(p) ;
-    
+    }    
     break;
   default:
     break;

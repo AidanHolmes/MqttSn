@@ -173,6 +173,7 @@ protected:
   virtual void received_pingresp(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_pingreq(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_disconnect(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
+  virtual void received_register(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_regack(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_puback(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_pubrec(uint8_t *sender_address, uint8_t *data, uint8_t len) ;

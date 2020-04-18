@@ -152,9 +152,40 @@ void ClientMqttSn::received_unsuback(uint8_t *sender_address, uint8_t *data, uin
 
 }
 
+void ClientMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uint8_t len)
+{
+  if (len < 4) return ;
+  uint16_t topicid = (data[0] << 8) | data[1] ; // Assuming MSB is first
+  uint16_t messageid = (data[2] << 8) | data[3] ; // Assuming MSB is first
+  char sztopic[PACKET_DRIVER_MAX_PAYLOAD - MQTT_REGISTER_HDR_LEN +1] ;
+  if (len - 4 > PACKET_DRIVER_MAX_PAYLOAD - MQTT_REGISTER_HDR_LEN) return ; // overflow
+  memcpy(sztopic, data+4, len-4) ;
+  sztopic[len-4] = '\0';
+
+  pthread_mutex_lock(&m_rwlock) ;
+
+  // Check connection status, are we connected, otherwise ignore
+  if (!m_client_connection.is_connected()) return ;
+  // Verify the source address is our connected gateway
+  if (!m_client_connection.address_match(sender_address)) return ; 
+  m_client_connection.update_activity() ; // Reset timers
+  
+  DPRINT("REGISTER: {topicid: %u, messageid: %u, topic %s}\n", topicid, messageid, sztopic) ;
+  
+  topicid = m_client_connection.topics.add_topic(sztopic, messageid) ;
+  uint8_t response[5] ;
+  response[0] = topicid >> 8 ; // Write topicid MSB first
+  response[1] = topicid & 0x00FF ;
+  response[2] = data[2] ; // Echo back the messageid received
+  response[3] = data[3] ; // Echo back the messageid received
+  response[4] = MQTT_RETURN_ACCEPTED ;
+  writemqtt(&m_client_connection, MQTT_REGACK, response, 5) ;
+  pthread_mutex_unlock(&m_rwlock) ;
+}
 
 void ClientMqttSn::received_regack(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
+  DPRINT("Regack entered\n") ;
   if (len != 5) return ;
   bool bsuccess = false ;
   
