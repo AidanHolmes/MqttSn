@@ -77,6 +77,16 @@ public:
 
 protected:
 
+  static void gateway_message_callback(struct mosquitto *m,
+				       void *data,
+				       const struct mosquitto_message message) ;
+  
+  static void gateway_subscribe_callback(struct mosquitto *m,
+					 void *data,
+					 int mid,
+					 int qoscount,
+					 const int *grantedqos);
+  
   static void gateway_publish_callback(struct mosquitto *m,
 				       void *data,
 				       int mid);

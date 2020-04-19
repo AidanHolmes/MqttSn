@@ -139,6 +139,45 @@ void ClientMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
 
 void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
+  // TO DO - finish this function. Needs to find pending topicid and complete topic as subscribed
+  // Will need a callback for client
+  if (len < 5) return ;
+
+  uint16_t topicid = (data[0] << 8) | data[1] ; // Assuming MSB is first
+  uint16_t messageid = (data[2] << 8) | data[3] ; // Assuming MSB is first
+
+  // Check connection status, are we connected, otherwise ignore
+  if (!m_client_connection.is_connected()) return ;
+  // Verify the source address is our connected gateway
+  if (!m_client_connection.address_match(sender_address)) return ; 
+
+  pthread_mutex_lock(&m_rwlock) ;
+
+  m_client_connection.update_activity() ; // Reset timers
+  
+  DPRINT("SUBACK: {topicid: %u, messageid: %u}\n", topicid, messageid) ;
+
+  switch(data[4]){
+  case MQTT_RETURN_ACCEPTED:
+    DPRINT("SUBACK: {return code = Accepted}\n") ;
+    //bsuccess = true ;
+    break ;
+  case MQTT_RETURN_CONGESTION:
+    DPRINT("SUBACK: {return code = Congestion}\n") ;
+    break ;
+  case MQTT_RETURN_INVALID_TOPIC:
+    DPRINT("SUBACK: {return code = Invalid Topic}\n") ;
+    break ;
+  case MQTT_RETURN_NOT_SUPPORTED:
+    DPRINT("SUBACK: {return code = Not Supported}\n") ;
+    break ;
+  default:
+    DPRINT("SUBACK: {return code = %u}\n", data[4]) ;
+  }
+
+
+
+  pthread_mutex_unlock(&m_rwlock) ;
 
 }
 
@@ -162,17 +201,23 @@ void ClientMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
   memcpy(sztopic, data+4, len-4) ;
   sztopic[len-4] = '\0';
 
-  pthread_mutex_lock(&m_rwlock) ;
 
   // Check connection status, are we connected, otherwise ignore
   if (!m_client_connection.is_connected()) return ;
   // Verify the source address is our connected gateway
   if (!m_client_connection.address_match(sender_address)) return ; 
+
+  pthread_mutex_lock(&m_rwlock) ;
+
   m_client_connection.update_activity() ; // Reset timers
   
   DPRINT("REGISTER: {topicid: %u, messageid: %u, topic %s}\n", topicid, messageid, sztopic) ;
   
-  topicid = m_client_connection.topics.add_topic(sztopic, messageid) ;
+  if (!m_client_connection.topics.create_topic(sztopic, topicid)){
+    // The topic id has already been used. This may be a server bug or the client retaining topics
+    // on reconnection. Server should always be source of truth for topic IDs
+    EPRINT("Client cannot add topic ID for topic %s due to exisiting topic ID %u already in-use\n", sztopic, topicid) ;
+  }
   uint8_t response[5] ;
   response[0] = topicid >> 8 ; // Write topicid MSB first
   response[1] = topicid & 0x00FF ;
@@ -181,6 +226,11 @@ void ClientMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
   response[4] = MQTT_RETURN_ACCEPTED ;
   writemqtt(&m_client_connection, MQTT_REGACK, response, 5) ;
   pthread_mutex_unlock(&m_rwlock) ;
+
+  // Call the client callback to inform of new topic
+  // Implicitly acceped, returns zero for message ID as client didn't request
+  if (m_fnregister) (*m_fnregister)(true, MQTT_RETURN_ACCEPTED, topicid, 0, m_client_connection.get_gwid());
+
 }
 
 void ClientMqttSn::received_regack(uint8_t *sender_address, uint8_t *data, uint8_t len)
@@ -457,22 +507,21 @@ void ClientMqttSn::received_willtopicreq(uint8_t *sender_address, uint8_t *data,
     // No topic set
     writemqtt(&m_client_connection, MQTT_WILLTOPIC, NULL, 0) ;
   }else{
-    uint8_t send[PACKET_DRIVER_MAX_PAYLOAD];
-    send[0] = 0 ;
+    m_buff[0] = 0 ;
     switch(m_willtopicqos){
     case 0:
-      send[0] = FLAG_QOS0 ;
+      m_buff[0] = FLAG_QOS0 ;
       break ;
     case 1:
-      send[0] = FLAG_QOS1 ;
+      m_buff[0] = FLAG_QOS1 ;
       break ;
     case 2:
     default: // Ignore other values and set to max QOS
-      send[0] = FLAG_QOS2 ;
+      m_buff[0] = FLAG_QOS2 ;
     }
     // Any overflow of size should have been checked so shouldn't need to check again here.
-    memcpy(send+1, m_willtopic, m_willtopicsize) ;
-    writemqtt(&m_client_connection, MQTT_WILLTOPIC, send, m_willtopicsize+1) ;
+    memcpy(m_buff+1, m_willtopic, m_willtopicsize) ;
+    writemqtt(&m_client_connection, MQTT_WILLTOPIC, m_buff, m_willtopicsize+1) ;
   }
   m_client_connection.set_activity(MqttConnection::Activity::willtopic) ;
   m_client_connection.update_activity() ;
@@ -624,17 +673,14 @@ bool ClientMqttSn::manage_connections()
 
 bool ClientMqttSn::searchgw(uint8_t radius)
 {
-  uint8_t buff[1] ;
-  buff[0] = radius ;
-
-  if (addrwritemqtt(m_pDriver->get_broadcast(), MQTT_SEARCHGW, buff, 1)){
+  if (addrwritemqtt(m_pDriver->get_broadcast(), MQTT_SEARCHGW, &radius, 1)){
     // Cache the message if disconnected. This changes the connection to use
     // the broadcast address for resending. 
     // Note that no caching is used if connection is in anyother state than disconnected. 
     // This is more efficient and prevents overwrite of cache for other 'connected' comms
     if (m_client_connection.get_state() == MqttConnection::State::disconnected){
       m_client_connection.set_address(m_pDriver->get_broadcast(), m_pDriver->get_address_len());
-      m_client_connection.set_cache(MQTT_SEARCHGW, buff, 1) ;
+      m_client_connection.set_cache(MQTT_SEARCHGW, &radius, 1) ;
       m_client_connection.set_activity(MqttConnection::Activity::searching) ;
     }
     return true ;
@@ -655,7 +701,6 @@ uint16_t ClientMqttSn::register_topic(const wchar_t *topic)
 uint16_t ClientMqttSn::register_topic(const char *topic)
 {
   uint16_t ret = 0, len = strlen(topic) ; // len excluding terminator
-  uint8_t buff[PACKET_DRIVER_MAX_PAYLOAD] ;
 
   if (m_client_connection.is_connected()){
     // Reject topic if too long for payload
@@ -678,13 +723,13 @@ uint16_t ClientMqttSn::register_topic(const char *topic)
 #ifndef ARDUINO
     pthread_mutex_unlock(&m_rwlock) ;
 #endif
-    buff[0] = 0 ;
-    buff[1] = 0 ; // topic ID set to zero
-    buff[2] = mid >> 8 ; // MSB
-    buff[3] = mid & 0x00FF;
-    memcpy(buff+4, topic, len) ;
+    m_buff[0] = 0 ;
+    m_buff[1] = 0 ; // topic ID set to zero
+    m_buff[2] = mid >> 8 ; // MSB
+    m_buff[3] = mid & 0x00FF;
+    memcpy(m_buff+4, topic, len) ;
     
-    if (writemqtt(&m_client_connection, MQTT_REGISTER, buff, 4+len)){
+    if (writemqtt(&m_client_connection, MQTT_REGISTER, m_buff, 4+len)){
       // Cache the message
       m_client_connection.set_activity(MqttConnection::Activity::registering) ;
       return mid; //return the message id
@@ -692,6 +737,70 @@ uint16_t ClientMqttSn::register_topic(const char *topic)
   }
   // Connection timed out or not connected
   return 0 ;
+}
+
+bool ClientMqttSn::subscribe(uint8_t qos, const char *sztopic, bool bshorttopic)
+{
+  if (!m_client_connection.is_connected()) return false ;
+
+  if (qos > 2) return false ; // Invalid QoS
+  uint8_t topic_len = strlen(sztopic) ;
+  if (topic_len > m_pDriver->get_payload_width() - MQTT_SUBSCRIBE_HDR_LEN){
+    EPRINT("Topic %s is too long to fit in subscription message\n", sztopic) ;
+    return false ;
+  }
+  if (bshorttopic){
+    if (topic_len < 2) return false ;
+    uint16_t topicid = (sztopic[0] << 8) | sztopic[1] ;
+    return subscribe(qos, topicid, FLAG_SHORT_TOPIC_NAME);
+  }
+  
+  m_buff[0] = (qos==0?FLAG_QOS0:0) |
+              (qos==1?FLAG_QOS1:0) |
+              (qos==2?FLAG_QOS2:0) ;
+  uint16_t mid = m_client_connection.get_new_messageid() ;
+  m_buff[1] = mid >> 8 ;
+  m_buff[2] = mid & 0x00FF ;
+
+  memcpy (m_buff+3, sztopic, topic_len) ;
+
+  // TO DO - register topic as being subscribed, leave as pending until SUBACK received and close
+  // Need this to associate topicid with subscribed topic.
+  
+  
+  if (writemqtt(&m_client_connection, MQTT_SUBSCRIBE, m_buff, topic_len+3)){
+    if (qos > 0) m_client_connection.set_activity(MqttConnection::Activity::subscribing);
+    // Update cached version to set the DUP flag
+    m_buff[0] |= FLAG_DUP;
+    m_client_connection.set_cache(MQTT_PUBLISH, m_buff, topic_len+3) ;
+    return true ;
+  }
+  return false ;
+}
+
+bool ClientMqttSn::subscribe(uint8_t qos, uint16_t topicid, uint8_t topictype)
+{
+  if (!m_client_connection.is_connected()) return false ;
+  if (qos > 2 || (topictype != FLAG_DEFINED_TOPIC_ID && topictype != FLAG_SHORT_TOPIC_NAME)) return false ;
+
+  m_buff[0] = 
+    (qos==0?FLAG_QOS0:0) |
+    (qos==1?FLAG_QOS1:0) |
+    (qos==2?FLAG_QOS2:0) | topictype;
+  uint16_t mid = m_client_connection.get_new_messageid() ;
+  m_buff[1] = mid >> 8 ;
+  m_buff[2] = mid & 0x00FF ;
+  m_buff[3] = topicid >> 8 ;
+  m_buff[4] = topicid & 0x00FF ;
+  
+  if (writemqtt(&m_client_connection, MQTT_SUBSCRIBE, m_buff, 5)){
+    if (qos > 0) m_client_connection.set_activity(MqttConnection::Activity::subscribing);
+    // Update cached version to set the DUP flag
+    m_buff[0] |= FLAG_DUP;
+    m_client_connection.set_cache(MQTT_PUBLISH, m_buff, 5) ;
+    return true ;
+  }
+  return false ;
 }
 
 bool ClientMqttSn::ping(uint8_t gwid)
@@ -714,20 +823,19 @@ bool ClientMqttSn::ping(uint8_t gwid)
 
 bool ClientMqttSn::disconnect(uint16_t sleep_duration)
 {
-  uint8_t buff[2] ;
   uint8_t len = 0 ;
   // Already disconnected or other issue closed the connection
   if (m_client_connection.is_disconnected()) return false ;
   if (m_client_connection.is_asleep()) return false ;
 
   if (sleep_duration > 0){
-    buff[0] = sleep_duration >> 8 ; //MSB set first
-    buff[1] = sleep_duration & 0x00FF ;
+    m_buff[0] = sleep_duration >> 8 ; //MSB set first
+    m_buff[1] = sleep_duration & 0x00FF ;
     len = 2 ;
   }
   m_sleep_duration = sleep_duration ; // store the duration
 
-  if (writemqtt(&m_client_connection, MQTT_DISCONNECT, buff, len)){
+  if (writemqtt(&m_client_connection, MQTT_DISCONNECT, m_buff, len)){
     m_client_connection.set_state(MqttConnection::State::disconnecting) ;
     return true ;
   }
@@ -749,27 +857,26 @@ bool ClientMqttSn::publish_noqos(uint8_t gwid, const char* sztopic, const uint8_
 
 bool ClientMqttSn::publish_noqos(uint8_t gwid, uint16_t topicid, uint8_t topictype, const uint8_t *payload, uint8_t payload_len, bool retain)
 {
-  uint8_t buff[PACKET_DRIVER_MAX_PAYLOAD] ;
-  buff[0] = (retain?FLAG_RETAIN:0) | FLAG_QOSN1 | topictype ;
-  buff[1] = topicid >> 8 ;
-  buff[2] = topicid & 0x00FF ;
-  buff[3] = 0 ;
-  buff[4] = 0 ;
+  m_buff[0] = (retain?FLAG_RETAIN:0) | FLAG_QOSN1 | topictype ;
+  m_buff[1] = topicid >> 8 ;
+  m_buff[2] = topicid & 0x00FF ;
+  m_buff[3] = 0 ;
+  m_buff[4] = 0 ;
   uint8_t len = payload_len + MQTT_PUBLISH_HDR_LEN ;
   if (payload_len > (m_pDriver->get_payload_width() - MQTT_PUBLISH_HDR_LEN)){
     EPRINT("Payload of %u bytes is too long for publish\n", payload_len) ;
     return false ;
   }
-  memcpy(buff+MQTT_PUBLISH_HDR_LEN,payload, payload_len);
+  memcpy(m_buff+MQTT_PUBLISH_HDR_LEN,payload, payload_len);
 
-  DPRINT("NOQOS - topicid %u, topictype %u, flags %X\n",topicid,topictype,buff[0]) ;
+  DPRINT("NOQOS - topicid %u, topictype %u, flags %X\n",topicid,topictype,m_buff[0]) ;
 
   MqttGwInfo *gw = get_gateway(gwid) ;
   if (!gw) return false ;
 
   if(topictype == FLAG_SHORT_TOPIC_NAME ||
      topictype == FLAG_DEFINED_TOPIC_ID){
-    if (!addrwritemqtt(gw->get_address(), MQTT_PUBLISH, buff, len)){
+    if (!addrwritemqtt(gw->get_address(), MQTT_PUBLISH, m_buff, len)){
       EPRINT("Failed to send QoS -1 message\n") ;
       return false ;
     }
@@ -797,35 +904,33 @@ bool ClientMqttSn::publish(uint8_t qos, const char *sztopic, const uint8_t *payl
 
 bool ClientMqttSn::publish(uint8_t qos, uint16_t topicid, uint16_t topictype, const uint8_t *payload, uint8_t payload_len, bool retain)
 {
-  uint8_t buff[PACKET_DRIVER_MAX_PAYLOAD] ;
-  
   // This publish call will not handle -1 QoS messages
   if (!m_client_connection.is_connected()) return false ;
 
   if (qos > 2) return false ; // Invalid QoS
   
-  buff[0] = (retain?FLAG_RETAIN:0) |
+  m_buff[0] = (retain?FLAG_RETAIN:0) |
     (qos==0?FLAG_QOS0:0) |
     (qos==1?FLAG_QOS1:0) |
     (qos==2?FLAG_QOS2:0) |
     topictype;
-  buff[1] = topicid >> 8 ;
-  buff[2] = topicid & 0x00FF ;
+  m_buff[1] = topicid >> 8 ;
+  m_buff[2] = topicid & 0x00FF ;
   uint16_t mid = m_client_connection.get_new_messageid() ;
-  buff[3] = mid << 8 ;
-  buff[4] = mid & 0x00FF ;
+  m_buff[3] = mid >> 8 ;
+  m_buff[4] = mid & 0x00FF ;
   uint8_t len = payload_len + 5 ;
-  if (len > (m_pDriver->get_payload_width() - MQTT_PUBLISH_HDR_LEN)){
+  if (payload_len > (m_pDriver->get_payload_width() - MQTT_PUBLISH_HDR_LEN)){
     EPRINT("Payload of %u bytes is too long for publish\n", payload_len) ;
     return false ;
   }
-  memcpy(buff+5,payload, payload_len);
+  memcpy(m_buff+5,payload, payload_len);
   
-  if (writemqtt(&m_client_connection, MQTT_PUBLISH, buff, len)){
+  if (writemqtt(&m_client_connection, MQTT_PUBLISH, m_buff, len)){
     if (qos > 0) m_client_connection.set_activity(MqttConnection::Activity::publishing);
     // keep a copy for retries. Set the DUP flag for retries
-    buff[0] |= FLAG_DUP;
-    m_client_connection.set_cache(MQTT_PUBLISH, buff, len) ;
+    m_buff[0] |= FLAG_DUP;
+    m_client_connection.set_cache(MQTT_PUBLISH, m_buff, len) ;
     return true ;
   }
 
@@ -835,11 +940,10 @@ bool ClientMqttSn::publish(uint8_t qos, uint16_t topicid, uint16_t topictype, co
 bool ClientMqttSn::connect(uint8_t gwid, bool will, bool clean, uint16_t keepalive)
 {
   MqttGwInfo *gw ;
-  uint8_t buff[PACKET_DRIVER_MAX_PAYLOAD] ;
-  buff[0] = (will?FLAG_WILL:0) | (clean?FLAG_CLEANSESSION:0) ;
-  buff[1] = MQTT_PROTOCOL ;
-  buff[2] = keepalive >> 8 ; // MSB set first
-  buff[3] = keepalive & 0x00FF ;
+  m_buff[0] = (will?FLAG_WILL:0) | (clean?FLAG_CLEANSESSION:0) ;
+  m_buff[1] = MQTT_PROTOCOL ;
+  m_buff[2] = keepalive >> 8 ; // MSB set first
+  m_buff[3] = keepalive & 0x00FF ;
 
 #ifndef ARDUINO
   pthread_mutex_lock(&m_rwlock) ;
@@ -864,14 +968,14 @@ bool ClientMqttSn::connect(uint8_t gwid, bool will, bool clean, uint16_t keepali
   if (len > m_pDriver->get_payload_width() - MQTT_CONNECT_HDR_LEN){
     len = m_pDriver->get_payload_width() - MQTT_CONNECT_HDR_LEN ; // Client ID is too long. Truncate
   }
-  memcpy(buff+4, m_szclient_id, len) ; // do not copy /0 terminator
+  memcpy(m_buff+4, m_szclient_id, len) ; // do not copy /0 terminator
 
 #if DEBUG
   char addrdbg[(PACKET_DRIVER_MAX_ADDRESS_LEN*2)+1];
   addr_to_straddr(gw->get_address(), addrdbg, m_pDriver->get_address_len()) ;
   DPRINT("Connecting to gateway %d at address %s\n", gwid, addrdbg) ;
 #endif
-  if (writemqtt(&m_client_connection, MQTT_CONNECT, buff, 4+len)){
+  if (writemqtt(&m_client_connection, MQTT_CONNECT, m_buff, 4+len)){
     // Record the start of the connection
     m_client_connection.set_state(MqttConnection::State::connecting) ;
     if(will)

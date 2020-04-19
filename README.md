@@ -64,6 +64,9 @@ The code is still work in-progress, but hoping to be complete soon following a h
 
 ## To-do
 * Subscription to topics
+* Handling topics will wrap topic IDs when server reaches max 16 bit topic IDs. No attempt made to find unused topic IDs. No clean handling of this exception yet
+* Server is vulnerable to register and topic flooding where server memory is totally consumed by many or rogue clients. Control required to manage memory
+* Client is vulnerable to register and topic flooding from wildcard flags or rogue server sending enough topics to consume client memory. Requires control. 
 * Sleeping clients (some implementation, but not fully tested)
 * Forwarders
 * Encryption (all plain text communication, can be intercepted, replayed and spoofed)

@@ -39,6 +39,7 @@
 // Callback for publish - bool success, uint8_t return_code, uint16_t topic_id, uint16_t message_id, uint8_t gwid
 #define MQTTPUBCALLBACK(fn) void (*fn)(bool, uint8_t, uint16_t, uint16_t, uint8_t)
 // Callback for registration - bool success, uint8_t return_code, uint16_t topic_id, uint16_t message_id, uint8_t gwid
+// Message ID is zero when server sends registrations (on dirty reconnect or publish wildcard topics)
 #define MQTTREGCALLBACK(fn) void (*fn)(bool, uint8_t, uint16_t, uint16_t, uint8_t)
 
 class ClientMqttSn : public MqttSnEmbed{
@@ -139,6 +140,17 @@ public:
   #endif
   uint16_t register_topic(const char *topic) ;
 
+  // Subscribe to a topic with the server using a topic name.
+  // Set bshorttopic to true if using 2 character topic identifiers
+  bool subscribe(uint8_t qos, const char *sztopic, bool bshorttopic = false) ;
+  
+  // Subscribe to a topic with the server using a topic ID. Supports
+  // short name or predefined ID.
+  // Function applies default topic type of defined topic ID for typical use
+  bool subscribe(uint8_t qos,
+		 uint16_t topicid,
+		 uint8_t topictype = FLAG_DEFINED_TOPIC_ID) ;
+  
   // Handles connections to gateways or to clients. Dispatches queued messages
   // Will return false if a queued message cannot be dispatched.
   bool manage_connections() ;
@@ -201,6 +213,9 @@ protected:
   size_t m_willmessagesize ;
   uint8_t m_willtopicqos ;
   uint16_t m_sleep_duration ;
+
+  // General payload buffer for memory reuse across calls
+  uint8_t m_buff[PACKET_DRIVER_MAX_PAYLOAD - MQTT_HDR_LEN] ;
   
   // Callback functions
   MQTTCONCALLBACK(m_fnconnected);

@@ -31,6 +31,10 @@ void MqttTopic::set_topic(uint16_t topic, uint16_t messageid, const char *sztopi
 {
   m_topicid = topic ;
   strncpy(m_sztopic, sztopic, PACKET_DRIVER_MAX_PAYLOAD - MQTT_REGISTER_HDR_LEN) ;
+  m_iswildcard = false ;
+  for (char *c = m_sztopic; *c ; c++){
+    if (*c == '#' || *c == '+') m_iswildcard = true ;
+  }  
   m_messageid = messageid ;
   m_registered_at = TIMENOW ;
 }
@@ -46,6 +50,9 @@ void MqttTopic::reset()
   m_registered_at = 0 ;
   m_timeout = 5 ;
   m_predefined = false ;
+  m_iswildcard = false ;
+  m_issubscribed = false ;
+  m_topicqos = 0;
 }
 
 MqttTopicCollection::MqttTopicCollection()
@@ -95,6 +102,8 @@ bool MqttTopicCollection::complete_topic(uint16_t messageid, uint16_t topicid)
   return false ;
 }
 
+// Used for predefined topics although servers capture unique predefined topics in another
+// topic collection so these are redundant
 bool MqttTopicCollection::create_topic(const char *sztopic, uint16_t topicid)
 {
   MqttTopic *p = NULL, *insert_at = NULL ;
@@ -128,6 +137,7 @@ bool MqttTopicCollection::create_topic(const char *sztopic, uint16_t topicid)
   return true ;
 }
 
+// Server call to add a topic. Used for subscriptions
 uint16_t MqttTopicCollection::add_topic(const char *sztopic, uint16_t messageid)
 {
   MqttTopic *p = NULL, *insert_at = NULL ;

@@ -110,22 +110,32 @@ void MqttConnection::set_pub_entities(uint16_t topicid,
   m_tmpretain = retain ;
 }
 
+void MqttConnection::set_sub_entities(uint16_t topicid,
+				      uint16_t messageid,
+				      int qos)
+{
+  m_tmptopicid = topicid;
+  m_tmpmessageid = messageid ;
+  m_tmpqos = qos ;
+}
+
+
 uint8_t MqttConnection::get_pub_topic_type()
 {
   return m_tmptopictype ;
 }
 
-uint16_t MqttConnection::get_pub_topicid()
+uint16_t MqttConnection::get_pubsub_topicid()
 {
   return m_tmptopicid ;
 }
 
-uint16_t MqttConnection::get_pub_messageid()
+uint16_t MqttConnection::get_pubsub_messageid()
 {
   return m_tmpmessageid ;
 }
 
-int MqttConnection::get_pub_qos()
+int MqttConnection::get_pubsub_qos()
 {
   return m_tmpqos ;
 }

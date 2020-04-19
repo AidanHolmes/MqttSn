@@ -64,7 +64,8 @@ public:
   }
 
 
-  // This is not a thread safe call. 
+  // This is not a thread safe call.
+  // Returns message IDs from 1 onwards. Zero is never used and should be treated as NULL
   uint16_t get_new_messageid() ;
   
   // Give 5 retries before failing. This mutliplies the time assuming that
@@ -99,11 +100,15 @@ public:
 			uint8_t topictype,
 			int qos, int len, uint8_t *payload, bool retain) ;
 
+  void set_sub_entities(uint16_t topicid,
+			uint16_t messageid,
+			int qos) ;
+  
   void set_mosquitto_mid(int mid) ;
   
-  uint16_t get_pub_topicid();
-  uint16_t get_pub_messageid() ;
-  int get_pub_qos();
+  uint16_t get_pubsub_topicid();
+  uint16_t get_pubsub_messageid() ;
+  int get_pubsub_qos();
   int get_pub_payload_len();
   const uint8_t* get_pub_payload();
   bool get_pub_retain();

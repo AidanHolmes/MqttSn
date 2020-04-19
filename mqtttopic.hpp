@@ -36,6 +36,7 @@ public:
 
   void set_topic(uint16_t topic, uint16_t messageid, const char *sztopic) ;
   void reset() ;
+  void set_subscribed(bool sub){m_issubscribed = sub;}
   bool registration_expired(){return (m_registered_at + m_timeout) < TIMENOW;}
   bool is_head(){return !m_prev;}
   uint16_t get_id(){return m_topicid;}
@@ -44,9 +45,12 @@ public:
   MqttTopic *next(){return m_next;}
   MqttTopic *prev(){return m_prev;}
   bool is_complete(){return m_acknowledged;}
+  bool is_wildcard(){return m_iswildcard;}
   void complete(uint16_t tid){m_acknowledged = true ;m_topicid=tid;}
   void set_predefined(bool predefined){m_predefined = predefined;}
   bool is_predefined(){return m_predefined;}
+  void set_qos(uint8_t qos){m_topicqos = qos;}
+  uint8_t get_qos(){return m_topicqos;}
   void unlink(){if (!is_head())m_prev->m_next = m_next;}
   void link_head(MqttTopic *topic){if (m_prev)m_prev->m_next = topic;m_prev = topic;} // adds topic ahead
   void link_tail(MqttTopic *topic){if (m_next)m_next->m_prev = topic;m_next = topic;} // adds topic after
@@ -60,6 +64,9 @@ protected:
   time_t m_registered_at ;
   uint16_t m_timeout ;
   bool m_predefined;
+  bool m_iswildcard;
+  bool m_issubscribed;
+  bool m_topicqos ;
 };
 
 class MqttTopicCollection{

@@ -1,16 +1,19 @@
-//   Copyright 2019 Aidan Holmes
-
-//   Licensed under the Apache License, Version 2.0 (the "License");
-//   you may not use this file except in compliance with the License.
-//   You may obtain a copy of the License at
+//   Copyright 2020 Aidan Holmes
 //
-//       http://www.apache.org/licenses/LICENSE-2.0
+// This file is part of MQTT-SN-EMBED library for embedded devices.
 //
-//   Unless required by applicable law or agreed to in writing, software
-//   distributed under the License is distributed on an "AS IS" BASIS,
-//   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//   See the License for the specific language governing permissions and
-//   limitations under the License.
+// MQTT-SN-EMBED is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// MQTT_SN_EMBED is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with MQTT-SN-EMBED.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "servermqtt.hpp"
 #include "radioutil.hpp"
@@ -184,8 +187,8 @@ bool ServerMqttSn::server_publish(MqttConnection *con)
     return false;
   }
 
-  uint16_t topicid = con->get_pub_topicid() ;
-  uint16_t messageid = con->get_pub_messageid() ;
+  uint16_t topicid = con->get_pubsub_topicid() ;
+  uint16_t messageid = con->get_pubsub_messageid() ;
   buff[0] = topicid >> 8 ; // replicate topic id 
   buff[1] = (topicid & 0x00FF) ; // replicate topic id 
   buff[2] = messageid >> 8 ; // replicate message id
@@ -279,7 +282,96 @@ void ServerMqttSn::received_pubrel(uint8_t *sender_address, uint8_t *data, uint8
 
 void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
+  if (len < 3) return ;
+  uint16_t messageid = (data[1] << 8) | data[2] ; // Assuming MSB is first
+  uint8_t qos = data[0] & FLAG_QOSN1 ;
+  uint8_t topic_type = data[0] & (FLAG_DEFINED_TOPIC_ID | FLAG_SHORT_TOPIC_NAME);
+  uint8_t buff[PACKET_DRIVER_MAX_PAYLOAD] ;
+  char sztopic[PACKET_DRIVER_MAX_PAYLOAD - MQTT_SUBSCRIBE_HDR_LEN + 1];
+  char *ptopic = NULL ;
+  int mid = 0, ret = 0;
+  uint16_t topicid = 0;
+  MqttTopic *t = NULL ;
+  
+  buff[0] = data[0] ;
+  buff[1] = 0 ;
+  buff[2] = 0;
+  buff[3] = data[1] ; // Message ID
+  buff[4] = data[2] ; // Message ID
+  
+  MqttConnection *con = search_connection_address(sender_address);
+  if (!con){
+    EPRINT("No registered connection for client\n") ;
+    return ;
+  }
 
+  if (!m_mosquitto_initialised){
+    EPRINT("Gateway is not connected to the Mosquitto server to process Subscribe\n") ;
+    buff[5] = MQTT_RETURN_CONGESTION;
+    writemqtt(con, MQTT_SUBACK, buff, 5) ;
+    return ;
+  }
+
+  switch(topic_type){
+  case FLAG_NORMAL_TOPIC_ID:
+  case FLAG_SHORT_TOPIC_NAME:
+    // Topic is contained in remaining bytes of data
+    memcpy(sztopic, data+3, len - 5);
+    sztopic[len-5] = '\0' ;
+    ptopic = sztopic ;
+    break;
+  case FLAG_DEFINED_TOPIC_ID:
+    topicid = (data[4] << 8) | data[5] ;
+    t = m_predefined_topics.get_topic(topicid) ;
+    if (!t){
+      EPRINT("Topic %u unknown for client subscription\n", topicid) ;
+      // Invalid topic, send client SUBACK with error
+      buff[5] = MQTT_RETURN_INVALID_TOPIC ;
+      writemqtt(con, MQTT_SUBACK, buff, 5) ;
+      return ;
+    }
+    // Reference the predefined topic
+    ptopic = t->get_topic();
+    break;
+  default:
+    // Shouldn't be possible to reach here
+    EPRINT("Unknown topic type %u from client\n", topic_type) ;
+    buff[5] = MQTT_RETURN_INVALID_TOPIC ;
+    writemqtt(con, MQTT_SUBACK, buff, 5) ;
+    return ;
+  }
+
+  // Register topic if new, otherwise returns existing topic
+  topicid = con->topics.add_topic(ptopic, messageid) ;
+  t = con->topics.get_topic(topicid) ;
+  if (!t){
+    EPRINT("Something went wrong getting the topic for client subscription\n");
+    return ;
+  }
+  if (t->is_wildcard()) topicid = 0 ; // Protocol requires return of 0 for wildcards
+  t->set_qos(qos) ;
+  
+  // Lock the publish and recording of MID 
+  pthread_mutex_lock(&m_mosquittolock) ;
+  // Subscribe using QoS 1 to server.
+  // TO DO - may need a config setting to specify for all mosquitto calls 
+  ret = mosquitto_subscribe(m_pmosquitto,
+			    &mid,
+			    ptopic,
+			    1);
+  // SUBACK handled through mosquitto call-back
+  if (ret != MOSQ_ERR_SUCCESS){
+    EPRINT("Mosquitto subscribe failed with code %d\n",ret);
+    buff[5] = MQTT_RETURN_CONGESTION;
+    writemqtt(con, MQTT_SUBACK, buff, 5) ;
+  }else{
+    DPRINT("Sending Mosquitto subscribe with mid %d\n", mid) ;
+    t->set_subscribed(true) ;
+    con->set_sub_entities(topicid, messageid, qos) ;
+    con->set_mosquitto_mid(mid) ;
+  }
+  pthread_mutex_unlock(&m_mosquittolock) ;
+  return ;
 }
 
 void ServerMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8_t len)
@@ -583,7 +675,6 @@ void ServerMqttSn::complete_client_connection(MqttConnection *p)
   if ((t=p->topics.get_curr_topic())){
     // Topics are set on the connection
     p->set_activity(MqttConnection::Activity::registeringall) ;
-    DPRINT("Registering topic to client %s\n", t->get_topic()) ;
     if (!register_topic(p, t)){
       EPRINT("Failed to send client topic id %u, name %s\n",
 	     t->get_id(), t->get_topic()) ;
@@ -601,8 +692,6 @@ void ServerMqttSn::received_willtopic(uint8_t *sender_address, uint8_t *data, ui
   uint8_t buff[1] ;
   if (!con){
     EPRINT("WillTopic could not find the client connection\n") ;
-    buff[0] = MQTT_RETURN_CONGESTION ; // There is no "who are you?" response so this will do
-    writemqtt(con, MQTT_CONNACK, buff, 1) ;
     return ;
   }
   
@@ -734,6 +823,7 @@ void ServerMqttSn::initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *
     EPRINT("Cannot create a new mosquitto instance\n") ;
   }else{
 
+    // TO DO: add in config for the mosquitto server
     int ret = mosquitto_connect_async(m_pmosquitto, "localhost", 1883, 60) ;
     if (ret != MOSQ_ERR_SUCCESS){
       EPRINT("Cannot connect to mosquitto broker\n") ;
@@ -754,6 +844,59 @@ void ServerMqttSn::initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *
     mosquitto_connect_callback_set(m_pmosquitto, gateway_connect_callback) ;
     mosquitto_disconnect_callback_set(m_pmosquitto, gateway_disconnect_callback);
     mosquitto_publish_callback_set(m_pmosquitto, gateway_publish_callback) ;
+    mosquitto_subscribe_callback_set(m_pmosquitto, gateway_subscribe_callback) ;
+  }
+}
+
+void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
+					    void *data,
+					    const struct mosquitto_message message)
+{
+  DPRINT("Received mosquitto message for topic %s at qos %d, with retain %s", message.topic, message.qos, message.retain?"true":"false") ;
+
+  /* mosquitto message struct
+  int mid;
+  char *topic;
+  void *payload;
+  int payloadlen;
+  int qos;
+  bool retain;
+  */
+
+  if (data == NULL) return ;
+  ServerMqttSn *gateway = (ServerMqttSn*)data ;
+  
+}
+
+void ServerMqttSn::gateway_subscribe_callback(struct mosquitto *m,
+					      void *data,
+					      int mid,
+					      int qoscount,
+					      const int *grantedqos)
+{
+  if (data == NULL) return ;
+  ServerMqttSn *gateway = (ServerMqttSn*)data ;
+
+  gateway->lock_mosquitto() ;
+  MqttConnection *con = gateway->search_mosquitto_id(mid) ;
+  gateway->unlock_mosquitto();
+
+  if (!con){
+    EPRINT("Cannot find Mosquitto ID %d in any connection for subscription\n", mid) ;
+    return ;
+  }
+
+  uint8_t buff[6] ;
+  uint16_t topicid = con->get_pubsub_topicid() ;
+  uint16_t messageid = con->get_pubsub_messageid() ;
+  buff[0] = con->get_pubsub_qos();
+  buff[1] = topicid >> 8 ;
+  buff[2] = topicid & 0x00FF ;
+  buff[3] = messageid >> 8 ;
+  buff[4] = messageid & 0x00FF ;
+  buff[5] = MQTT_RETURN_ACCEPTED ;
+  if (gateway->writemqtt(con, MQTT_PUBACK, buff, 6)){
+    con->set_activity(MqttConnection::Activity::none);
   }
 }
 
@@ -775,14 +918,14 @@ void ServerMqttSn::gateway_publish_callback(struct mosquitto *m,
   }
 
   uint8_t buff[5] ; // Response buffer
-  uint16_t topicid = con->get_pub_topicid() ;
-  uint16_t messageid = con->get_pub_messageid() ;
+  uint16_t topicid = con->get_pubsub_topicid() ;
+  uint16_t messageid = con->get_pubsub_messageid() ;
   buff[0] = topicid >> 8 ; // replicate topic id 
   buff[1] = topicid & 0x00FF ; // replicate topic id 
   buff[2] = messageid >> 8 ; // replicate message id
   buff[3] = messageid & 0x00FF ; // replicate message id
 
-  switch(con->get_pub_qos()){
+  switch(con->get_pubsub_qos()){
   case 0:
     con->set_activity(MqttConnection::Activity::none);
     break;
@@ -795,7 +938,7 @@ void ServerMqttSn::gateway_publish_callback(struct mosquitto *m,
     break ;
   default:
     con->set_activity(MqttConnection::Activity::none);
-    EPRINT("Invalid QoS %d\n", con->get_pub_qos()) ;
+    EPRINT("Invalid QoS %d\n", con->get_pubsub_qos()) ;
   }
 }
 

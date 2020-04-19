@@ -307,7 +307,7 @@ bool MqttSnEmbed::addrwritemqtt(const uint8_t *address,
 			       uint8_t messageid,
 			       const uint8_t *buff,
 			       uint8_t len)
-{  
+{
   uint8_t send_buff[PACKET_DRIVER_MAX_PAYLOAD] ;
   // includes the length field and message type
   uint8_t payload_len = len+MQTT_HDR_LEN;
