@@ -34,13 +34,16 @@ public:
   MqttTopic(){reset();}
   MqttTopic(uint16_t topic, uint16_t mid, const char *sztopic){reset();set_topic(topic, mid, sztopic);}
 
+  bool match(const char *sztopic) ;
   void set_topic(uint16_t topic, uint16_t messageid, const char *sztopic) ;
   void reset() ;
   void set_subscribed(bool sub){m_issubscribed = sub;}
+  bool is_subscribed(){return m_issubscribed;}
   bool registration_expired(){return (m_registered_at + m_timeout) < TIMENOW;}
   bool is_head(){return !m_prev;}
   uint16_t get_id(){return m_topicid;}
   uint16_t get_message_id(){return m_messageid;}
+  void set_message_id(uint16_t mid){m_messageid = mid;}
   char *get_topic(){return m_sztopic;}
   MqttTopic *next(){return m_next;}
   MqttTopic *prev(){return m_prev;}
@@ -74,20 +77,22 @@ public:
   MqttTopicCollection() ;
   ~MqttTopicCollection() ;
   
-  // Client connection will register that it is creating a topic
-  // Needs to be formally added with a complete_topic call
-  uint16_t reg_topic(const char *sztopic, uint16_t messageid) ;
+  // Client connection will register for a new topic
+  // topic remains incomplete until confirmed by server and client calls complete_topic
+  MqttTopic* reg_topic(const char *sztopic, uint16_t messageid) ;
+  
   // Server adds the topic. a call to complete_topic is not required when a
   // server adds a topic.
-  // Will return a new Topic ID or if the topic already exists, the existing Topic ID
-  uint16_t add_topic(const char *sztopic, uint16_t messageid=0) ;
+  // Will return a new Topic or if the topic already exists, the existing Topic object
+  MqttTopic* add_topic(const char *sztopic, uint16_t messageid=0) ;
 
   // Add a topic to the collection with a specific topic ID
-  // returns false if the topic ID has already been allocated
-  bool create_topic(const char *sztopic, uint16_t topicid) ;
+  // returns NULL if the topic ID has already been allocated
+  MqttTopic* create_topic(const char *sztopic, uint16_t topicid, bool predefined = false) ;
   
-  // Client call to complete topic and update topicid. Returns false if not found
-  bool complete_topic(uint16_t messageid, uint16_t topicid) ;
+  // Client call to complete topic and update topicid. Returns NULL if not found
+  // Returns the completed topic
+  MqttTopic* complete_topic(uint16_t messageid, uint16_t topicid) ;
   bool del_topic(uint16_t id) ;
   bool del_topic_by_messageid(uint16_t messageid) ;
   void free_topics() ; // delete all topics and free mem
@@ -95,6 +100,7 @@ public:
   MqttTopic* get_next_topic() ;
   MqttTopic* get_curr_topic() ;
   MqttTopic* get_topic(uint16_t topicid) ;
+
 protected:
   MqttTopic *topics ;
   MqttTopic *m_topic_iterator ;

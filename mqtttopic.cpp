@@ -39,6 +39,30 @@ void MqttTopic::set_topic(uint16_t topic, uint16_t messageid, const char *sztopi
   m_registered_at = TIMENOW ;
 }
 
+bool MqttTopic::match(const char* sztopic)
+{
+  const char *p = sztopic ;
+  for (char *c = m_sztopic; *c ; c++){
+    switch(*c){
+    case '+':
+      // Skip level
+      for ( ; *p && *p != '/'; p++) ;
+      if (*p == '/') p++ ;
+      break;
+    case '#':
+      // Assumed to be final wildcard to match remaining
+      return true ;      
+    default:
+      break;
+    }
+    if (*c != *p) return false ;
+  }
+
+  // All of m_sztopic has been parsed
+  if (*p) return false ; // Still more characters in sztopic
+  return true ; // match
+}
+
 void MqttTopic::reset()
 {
   m_next = NULL;
@@ -66,45 +90,47 @@ MqttTopicCollection::~MqttTopicCollection()
   free_topics() ;
 }
 
-uint16_t MqttTopicCollection::reg_topic(const char *sztopic, uint16_t messageid)
+MqttTopic* MqttTopicCollection::reg_topic(const char *sztopic, uint16_t messageid)
 {
   MqttTopic *p = NULL, *insert_at = NULL ;
   if (!topics){
     // No topics in collection.
     // Create the head topic. No index set
     topics = new MqttTopic(0, messageid, sztopic) ;
-    return 0;
+    return topics;
   }
   for (p = topics; p; p = p->next()){
     if (strcmp(p->get_topic(), sztopic) == 0){
       // topic exists
       DPRINT("Topic %s already exists for collection\n", sztopic) ;
-      return p->get_id() ;
+      return p ;
     }
     insert_at = p ; // Save last valid topic pointer
   }
 
-  insert_at->link_tail(new MqttTopic(0, messageid, sztopic)) ;
-  return 0 ;
+  p = new MqttTopic(0, messageid, sztopic) ;
+  if (p)
+    insert_at->link_tail(p);
+  return p ;
 }
 
-bool MqttTopicCollection::complete_topic(uint16_t messageid, uint16_t topicid)
+MqttTopic* MqttTopicCollection::complete_topic(uint16_t messageid, uint16_t topicid)
 {
   MqttTopic *p = NULL ;
-  if (!topics) return false ; // no topics
+  if (!topics) return p ; // no topics
   for (p = topics; p; p = p->next()){
     if (p->get_message_id() == messageid && !p->is_complete()){
       p->complete(topicid) ;
-      return true ;
+      return p ;
     }
   }
   // Cannot find an incomplete topic that needs completing
-  return false ;
+  return p ;
 }
 
 // Used for predefined topics although servers capture unique predefined topics in another
 // topic collection so these are redundant
-bool MqttTopicCollection::create_topic(const char *sztopic, uint16_t topicid)
+MqttTopic* MqttTopicCollection::create_topic(const char *sztopic, uint16_t topicid, bool predefined)
 {
   MqttTopic *p = NULL, *insert_at = NULL ;
   uint16_t available_id = 0 ;
@@ -115,15 +141,15 @@ bool MqttTopicCollection::create_topic(const char *sztopic, uint16_t topicid)
     // No topics in collection.
     // Create the head topic.
     topics = new MqttTopic(topicid, 0, sztopic) ;
-    topics->set_predefined(true) ;
-    return true;
+    topics->set_predefined(predefined) ;
+    return topics;
   }
 
   for (p = topics; p; p = p->next()){
     if (p->get_id() == topicid){
       // topic exists
       DPRINT("Topic ID %u already exists for collection\n", topicid) ;
-      return false ;
+      return NULL ;
     }
     insert_at = p ; // Save last valid topic pointer
   }
@@ -131,14 +157,14 @@ bool MqttTopicCollection::create_topic(const char *sztopic, uint16_t topicid)
   // the ID count will overflow! Overflows in 18 hours if requested every second
   // TO DO: Better implementation of ID assignment and improved data structure
   p = new MqttTopic(topicid, 0, sztopic) ;
-  p->set_predefined(true) ;
-  p->complete(available_id) ; // server completes the topic
+  p->set_predefined(predefined) ;
+  p->complete(topicid) ; // server completes the topic
   insert_at->link_tail(p);
-  return true ;
+  return p ;
 }
 
 // Server call to add a topic. Used for subscriptions
-uint16_t MqttTopicCollection::add_topic(const char *sztopic, uint16_t messageid)
+MqttTopic* MqttTopicCollection::add_topic(const char *sztopic, uint16_t messageid)
 {
   MqttTopic *p = NULL, *insert_at = NULL ;
   uint16_t available_id = 0 ;
@@ -147,13 +173,13 @@ uint16_t MqttTopicCollection::add_topic(const char *sztopic, uint16_t messageid)
     // Create the head topic. Always index 1
     topics = new MqttTopic(1, messageid, sztopic) ;
     topics->complete(1) ;
-    return 1;
+    return topics;
   }
   for (p = topics; p; p = p->next()){
     if (strcmp(p->get_topic(), sztopic) == 0){
       // topic exists
       DPRINT("Topic %s already exists for collection\n", sztopic) ;
-      return p->get_id() ;
+      return p ;
     }
     // Add 1 to be unique
     if (p->get_id() > available_id) available_id = p->get_id() + 1 ;
@@ -165,7 +191,7 @@ uint16_t MqttTopicCollection::add_topic(const char *sztopic, uint16_t messageid)
   p = new MqttTopic(available_id, messageid, sztopic) ;
   p->complete(available_id) ; // server completes the topic
   insert_at->link_tail(p);
-  return available_id ;
+  return p ;
 }
 
 bool MqttTopicCollection::del_topic_by_messageid(uint16_t messageid)
@@ -240,7 +266,7 @@ MqttTopic* MqttTopicCollection::get_topic(uint16_t topicid)
   }
   return NULL ;
 }
- 
+
 MqttTopic* MqttTopicCollection::get_next_topic()
 {
   if (!m_topic_iterator) return NULL ;

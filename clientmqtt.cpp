@@ -157,10 +157,19 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
   
   DPRINT("SUBACK: {topicid: %u, messageid: %u}\n", topicid, messageid) ;
 
+  MqttTopic *t = NULL ;
+
   switch(data[4]){
   case MQTT_RETURN_ACCEPTED:
     DPRINT("SUBACK: {return code = Accepted}\n") ;
-    //bsuccess = true ;
+    if (! (t=m_client_connection.topics.complete_topic(messageid, topicid))){
+      // Topic completion may not work if the topicid was already registered or
+      // previously subscribed
+      EPRINT("SUBACK: Client cannot complete topic ID %u. Topic may already be registered\n", topicid) ;
+    }else{
+      DPRINT("SUBACK: Topic %s completed and registered with ID %u\n", t->get_topic(), t->get_id()) ;
+    }
+
     break ;
   case MQTT_RETURN_CONGESTION:
     DPRINT("SUBACK: {return code = Congestion}\n") ;
@@ -175,10 +184,8 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
     DPRINT("SUBACK: {return code = %u}\n", data[4]) ;
   }
 
-
-
+  m_client_connection.set_activity(MqttConnection::Activity::none) ;
   pthread_mutex_unlock(&m_rwlock) ;
-
 }
 
 void ClientMqttSn::received_unsubscribe(uint8_t *sender_address, uint8_t *data, uint8_t len)
@@ -212,12 +219,13 @@ void ClientMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
   m_client_connection.update_activity() ; // Reset timers
   
   DPRINT("REGISTER: {topicid: %u, messageid: %u, topic %s}\n", topicid, messageid, sztopic) ;
-  
-  if (!m_client_connection.topics.create_topic(sztopic, topicid)){
-    // The topic id has already been used. This may be a server bug or the client retaining topics
-    // on reconnection. Server should always be source of truth for topic IDs
-    EPRINT("Client cannot add topic ID for topic %s due to exisiting topic ID %u already in-use\n", sztopic, topicid) ;
+
+  MqttTopic *t = NULL;
+  if (!(t=m_client_connection.topics.create_topic(sztopic, topicid))){
+    EPRINT("Server error, cannot create topic %s, possible memory error or topic exists\n", sztopic) ;
+    return ; // Stop
   }
+  
   uint8_t response[5] ;
   response[0] = topicid >> 8 ; // Write topicid MSB first
   response[1] = topicid & 0x00FF ;
@@ -710,15 +718,21 @@ uint16_t ClientMqttSn::register_topic(const char *topic)
 #endif
     uint16_t mid = m_client_connection.get_new_messageid() ;
     // Register the topic. Return value is zero if topic is new
-    ret = m_client_connection.topics.reg_topic(topic, mid) ;
-    if(ret > 0){
-      DPRINT("reg_topic returned an existing topic ID %u\n", ret) ;
+    MqttTopic *t = m_client_connection.topics.reg_topic(topic, mid) ;
+    if(t->get_id() > 0){
+      if (t->is_complete()){
+	DPRINT("reg_topic returned an existing & complete topic ID %u\n", t->get_id()) ;
 #ifndef ARDUINO
-      pthread_mutex_unlock(&m_rwlock) ;
+	pthread_mutex_unlock(&m_rwlock) ;
 #endif
-      return ret ; // already exists
+	return ret ; // already exists
+      }else{
+	DPRINT("Topic ID %u already exists but is incomplete, attempting with new mid %u\n", t->get_id(), mid) ;
+	t->set_message_id(mid) ; // Set new message id to complete
+      }
+    }else{
+      DPRINT("reg_topic has registered a new topic %u\n", mid) ;
     }
-    DPRINT("reg_topic has registered a new topic %u\n", mid) ;
 
 #ifndef ARDUINO
     pthread_mutex_unlock(&m_rwlock) ;
@@ -769,7 +783,11 @@ bool ClientMqttSn::subscribe(uint8_t qos, const char *sztopic, bool bshorttopic)
   
   
   if (writemqtt(&m_client_connection, MQTT_SUBSCRIBE, m_buff, topic_len+3)){
-    if (qos > 0) m_client_connection.set_activity(MqttConnection::Activity::subscribing);
+    m_client_connection.set_activity(MqttConnection::Activity::subscribing);
+    MqttTopic *t = m_client_connection.topics.reg_topic(sztopic, mid) ;
+    if (t->get_id() > 0){
+      DPRINT("INFO: Subscription to topic %s is already registered with an ID %u\n", sztopic, t->get_id());
+    }
     // Update cached version to set the DUP flag
     m_buff[0] |= FLAG_DUP;
     m_client_connection.set_cache(MQTT_PUBLISH, m_buff, topic_len+3) ;

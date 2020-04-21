@@ -79,7 +79,7 @@ protected:
 
   static void gateway_message_callback(struct mosquitto *m,
 				       void *data,
-				       const struct mosquitto_message message) ;
+				       const struct mosquitto_message *message) ;
   
   static void gateway_subscribe_callback(struct mosquitto *m,
 					 void *data,

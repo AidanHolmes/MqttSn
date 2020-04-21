@@ -342,14 +342,13 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
   }
 
   // Register topic if new, otherwise returns existing topic
-  topicid = con->topics.add_topic(ptopic, messageid) ;
-  t = con->topics.get_topic(topicid) ;
+  t = con->topics.add_topic(ptopic, messageid) ;
   if (!t){
     EPRINT("Something went wrong getting the topic for client subscription\n");
     return ;
   }
-  if (t->is_wildcard()) topicid = 0 ; // Protocol requires return of 0 for wildcards
   t->set_qos(qos) ;
+  t->set_subscribed(true) ;
   
   // Lock the publish and recording of MID 
   pthread_mutex_lock(&m_mosquittolock) ;
@@ -366,8 +365,8 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     writemqtt(con, MQTT_SUBACK, buff, 5) ;
   }else{
     DPRINT("Sending Mosquitto subscribe with mid %d\n", mid) ;
-    t->set_subscribed(true) ;
-    con->set_sub_entities(topicid, messageid, qos) ;
+    // Don't set a topic ID if topic is a wildcard
+    con->set_sub_entities(t->is_wildcard()?0:t->get_id(), messageid, qos) ;
     con->set_mosquitto_mid(mid) ;
   }
   pthread_mutex_unlock(&m_mosquittolock) ;
@@ -408,7 +407,8 @@ void ServerMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
     pthread_mutex_unlock(&m_rwlock) ;
     return ;
   }
-  topicid = con->topics.add_topic(sztopic, messageid) ;
+  MqttTopic *t = con->topics.add_topic(sztopic, messageid) ;
+  topicid = t->get_id();
   uint8_t response[5] ;
   response[0] = topicid >> 8 ; // Write topicid MSB first
   response[1] = topicid & 0x00FF ;
@@ -841,6 +841,7 @@ void ServerMqttSn::initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *
     DPRINT("Mosquitto server connected %d.%d.%d\n", major, minor, revision) ;
 #endif
   
+    mosquitto_message_callback_set(m_pmosquitto, gateway_message_callback) ;
     mosquitto_connect_callback_set(m_pmosquitto, gateway_connect_callback) ;
     mosquitto_disconnect_callback_set(m_pmosquitto, gateway_disconnect_callback);
     mosquitto_publish_callback_set(m_pmosquitto, gateway_publish_callback) ;
@@ -850,9 +851,9 @@ void ServerMqttSn::initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *
 
 void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
 					    void *data,
-					    const struct mosquitto_message message)
+					    const struct mosquitto_message *message)
 {
-  DPRINT("Received mosquitto message for topic %s at qos %d, with retain %s", message.topic, message.qos, message.retain?"true":"false") ;
+  DPRINT("Received mosquitto message for topic %s at qos %d, with retain %s", message->topic, message->qos, message->retain?"true":"false") ;
 
   /* mosquitto message struct
   int mid;
@@ -865,7 +866,54 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
 
   if (data == NULL) return ;
   ServerMqttSn *gateway = (ServerMqttSn*)data ;
+
+  MqttTopic *t = NULL;
+  MqttConnection *p = NULL ;
+  uint8_t buff[PACKET_DRIVER_MAX_PAYLOAD] ;
+
+  if (message->payloadlen > (gateway->m_pDriver->get_payload_width() - MQTT_PUBLISH_HDR_LEN)){
+    EPRINT("Payload of %u bytes is too long for publish\n", message->payloadlen);
+    return ;
+  }
   
+  for(p = gateway->m_connection_head; p != NULL; p=p->next){
+    if (p->is_connected()){
+      p->topics.iterate_first_topic();
+      while ((t=p->topics.get_next_topic())){
+	if (t->match(message->topic)){
+	  uint8_t qos = t->get_qos() ;
+	  if (t->is_wildcard()){
+	    // Create new topic ID or use existing
+	    if (!(t = p->topics.add_topic(message->topic))) continue;
+	    t->set_qos(qos) ;
+	    // TO DO - this is bad as it will not retry if no ACK received
+	    // Do better orchestration - possibly store the topic on the connection
+	    // and have an open activity to complete all matching topics + register
+	    gateway->register_topic(p, t); // Send the topic and ignore ack
+	  }
+	  buff[0] = (message->retain?FLAG_RETAIN:0) |
+	    (qos==0?FLAG_QOS0:0) |
+	    (qos==1?FLAG_QOS1:0) |
+	    (qos==2?FLAG_QOS2:0) |
+	    FLAG_NORMAL_TOPIC_ID;
+	  uint16_t topicid = t->get_id() ;
+	  buff[1] = topicid >> 8;
+	  buff[2] = topicid & 0x00FF ;
+	  uint16_t mid = p->get_new_messageid() ;
+	  buff[3] = mid >> 8 ;
+	  buff[4] = mid & 0x00FF ;
+	  uint8_t len = message->payloadlen + 5;
+
+	  memcpy(buff+5, message->payload, message->payloadlen) ;
+	  if (gateway->writemqtt(p, MQTT_PUBLISH, buff, len)){
+	    if (qos > 0) p->set_activity(MqttConnection::Activity::publishing);
+	    buff[0] |= FLAG_DUP;
+	    p->set_cache(MQTT_PUBLISH, buff, len) ;
+	  }
+	}
+      }
+    }
+  }
 }
 
 void ServerMqttSn::gateway_subscribe_callback(struct mosquitto *m,
@@ -1115,7 +1163,7 @@ bool ServerMqttSn::create_predefined_topic(uint16_t topicid, const char *name)
     EPRINT("Pre-defined topic %s too long\n", name) ;
     return false ;
   }
-  return m_predefined_topics.create_topic(name, topicid) ;
+  return m_predefined_topics.create_topic(name, topicid) != NULL ;
 }
 
 bool ServerMqttSn::create_predefined_topic(uint16_t topicid, const wchar_t *name)
@@ -1126,7 +1174,7 @@ bool ServerMqttSn::create_predefined_topic(uint16_t topicid, const wchar_t *name
 		sztopic,
 		m_pDriver->get_payload_width() - MQTT_REGISTER_HDR_LEN);
   
-  return m_predefined_topics.create_topic(sztopic, topicid) ;
+  return m_predefined_topics.create_topic(sztopic, topicid) != NULL ;
 }
 
 bool ServerMqttSn::ping(const char *szclientid)
