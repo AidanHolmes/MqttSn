@@ -133,7 +133,7 @@ MqttTopic* MqttTopicCollection::complete_topic(uint16_t messageid, uint16_t topi
 MqttTopic* MqttTopicCollection::create_topic(const char *sztopic, uint16_t topicid, bool predefined)
 {
   MqttTopic *p = NULL, *insert_at = NULL ;
-  uint16_t available_id = 0 ;
+
 
   // To Do: Verify that the topic name doesn't contain wildcards for
   // pre-defined topics

@@ -194,6 +194,34 @@ void publish(char params[][30], int count)
     }
   }
 }
+void subscribe(char params[][30], int count)
+{
+  bool b_numtopic = false;
+  
+  if (count < 2){
+    printf("subscribe qos topic|topicid\n") ;
+  }
+
+  uint8_t gwid = 0;
+  if (!pradio->get_known_gateway(&gwid)){
+    fprintf(stderr, "No known gateway to connect to\n") ;
+    return ;
+  }
+    
+  int qos = atoi(params[0]);
+  for (char *p = params[1]; *p; p++){
+    if (*p >= '0' && *p <= '9'){
+      b_numtopic = true ;
+      break;
+    }
+  }
+
+  if (b_numtopic){
+    pradio->subscribe((uint8_t)qos, (uint16_t)atoi(params[1]));
+  }else{
+    pradio->subscribe((uint8_t)qos, params[1], false);
+  }
+}
 
 void register_topic(char params[][30], int count)
 {
@@ -227,7 +255,8 @@ int main(int argc, char **argv)
 			Command("gwinfo", &gwinfo, true),
 			Command("addgw", &addgw, true),
 			Command("publish", &publish, true),
-			Command("register", &register_topic, true)} ;
+			Command("register", &register_topic, true),
+                        Command("subscribe", &subscribe, true)} ;
   
   struct sigaction siginthandle ;
 

@@ -943,7 +943,7 @@ void ServerMqttSn::gateway_subscribe_callback(struct mosquitto *m,
   buff[3] = messageid >> 8 ;
   buff[4] = messageid & 0x00FF ;
   buff[5] = MQTT_RETURN_ACCEPTED ;
-  if (gateway->writemqtt(con, MQTT_PUBACK, buff, 6)){
+  if (gateway->writemqtt(con, MQTT_SUBACK, buff, 6)){
     con->set_activity(MqttConnection::Activity::none);
   }
 }
