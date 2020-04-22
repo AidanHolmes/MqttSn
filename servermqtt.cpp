@@ -316,12 +316,12 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
   case FLAG_NORMAL_TOPIC_ID:
   case FLAG_SHORT_TOPIC_NAME:
     // Topic is contained in remaining bytes of data
-    memcpy(sztopic, data+3, len - 5);
-    sztopic[len-5] = '\0' ;
+    memcpy(sztopic, data+3, len - 3);
+    sztopic[len-3] = '\0' ;
     ptopic = sztopic ;
     break;
   case FLAG_DEFINED_TOPIC_ID:
-    topicid = (data[4] << 8) | data[5] ;
+    topicid = (data[3] << 8) | data[4] ;
     t = m_predefined_topics.get_topic(topicid) ;
     if (!t){
       EPRINT("Topic %u unknown for client subscription\n", topicid) ;
