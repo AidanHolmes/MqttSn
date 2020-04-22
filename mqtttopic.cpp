@@ -55,7 +55,7 @@ bool MqttTopic::match(const char* sztopic)
     default:
       break;
     }
-    if (*c != *p) return false ;
+    if (*c != *p++) return false ;
   }
 
   // All of m_sztopic has been parsed

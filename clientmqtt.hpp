@@ -194,7 +194,7 @@ protected:
   virtual void received_suback(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_unsubscribe(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_unsuback(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
-
+  virtual void received_publish(uint8_t *sender_address, uint8_t *data, uint8_t len);
   MqttGwInfo* get_gateway(uint8_t gwid);
   MqttGwInfo* get_gateway_address(uint8_t *gwaddress) ;
   MqttGwInfo* get_available_gateway();

@@ -198,6 +198,11 @@ void ClientMqttSn::received_unsuback(uint8_t *sender_address, uint8_t *data, uin
 
 }
 
+void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint8_t len)
+{
+  DPRINT("TO DO: Client Publish\n");
+}
+
 void ClientMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
   if (len < 4) return ;

@@ -853,7 +853,7 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
 					    void *data,
 					    const struct mosquitto_message *message)
 {
-  DPRINT("Received mosquitto message for topic %s at qos %d, with retain %s", message->topic, message->qos, message->retain?"true":"false") ;
+  DPRINT("Received mosquitto message for topic %s at qos %d, with retain %s\n", message->topic, message->qos, message->retain?"true":"false") ;
 
   /* mosquitto message struct
   int mid;
@@ -879,8 +879,11 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
   for(p = gateway->m_connection_head; p != NULL; p=p->next){
     if (p->is_connected()){
       p->topics.iterate_first_topic();
-      while ((t=p->topics.get_next_topic())){
+      t=p->topics.get_curr_topic();
+      while (t){
+	DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
 	if (t->match(message->topic)){
+	  DPRINT("Found match against %s\n", t->get_topic());
 	  uint8_t qos = t->get_qos() ;
 	  if (t->is_wildcard()){
 	    // Create new topic ID or use existing
@@ -911,6 +914,7 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
 	    p->set_cache(MQTT_PUBLISH, buff, len) ;
 	  }
 	}
+	t=p->topics.get_next_topic();
       }
     }
   }
