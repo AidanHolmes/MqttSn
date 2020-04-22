@@ -944,6 +944,7 @@ void ServerMqttSn::gateway_subscribe_callback(struct mosquitto *m,
   buff[4] = messageid & 0x00FF ;
   buff[5] = MQTT_RETURN_ACCEPTED ;
   if (gateway->writemqtt(con, MQTT_SUBACK, buff, 6)){
+    DPRINT("Sending SUBACK with topic id %u and message id %u\n", topicid, messageid);
     con->set_activity(MqttConnection::Activity::none);
   }
 }

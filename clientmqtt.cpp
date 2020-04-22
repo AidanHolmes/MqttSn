@@ -143,8 +143,8 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
   // Will need a callback for client
   if (len < 5) return ;
 
-  uint16_t topicid = (data[0] << 8) | data[1] ; // Assuming MSB is first
-  uint16_t messageid = (data[2] << 8) | data[3] ; // Assuming MSB is first
+  uint16_t topicid = (data[1] << 8) | data[2] ; // Assuming MSB is first
+  uint16_t messageid = (data[3] << 8) | data[4] ; // Assuming MSB is first
 
   // Check connection status, are we connected, otherwise ignore
   if (!m_client_connection.is_connected()) return ;
@@ -159,7 +159,7 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
 
   MqttTopic *t = NULL ;
 
-  switch(data[4]){
+  switch(data[5]){
   case MQTT_RETURN_ACCEPTED:
     DPRINT("SUBACK: {return code = Accepted}\n") ;
     if (! (t=m_client_connection.topics.complete_topic(messageid, topicid))){
@@ -181,7 +181,7 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
     DPRINT("SUBACK: {return code = Not Supported}\n") ;
     break ;
   default:
-    DPRINT("SUBACK: {return code = %u}\n", data[4]) ;
+    DPRINT("SUBACK: {return code = %u}\n", data[5]) ;
   }
 
   m_client_connection.set_activity(MqttConnection::Activity::none) ;
