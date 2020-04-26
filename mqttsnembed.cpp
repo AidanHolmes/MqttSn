@@ -40,6 +40,28 @@ MqttSnEmbed::~MqttSnEmbed()
 
 }
 
+bool MqttSnEmbed::create_predefined_topic(uint16_t topicid, const char *name)
+{
+  if ((uint8_t)strlen(name) > m_pDriver->get_payload_width() - MQTT_REGISTER_HDR_LEN){
+    EPRINT("Pre-defined topic %s too long\n", name) ;
+    return false ;
+  }
+  return m_predefined_topics.create_topic(name, topicid) != NULL ;
+}
+
+#ifndef ARDUINO
+bool MqttSnEmbed::create_predefined_topic(uint16_t topicid, const wchar_t *name)
+{
+  char sztopic[PACKET_DRIVER_MAX_PAYLOAD - MQTT_REGISTER_HDR_LEN] ;
+  
+  wchar_to_utf8(name,
+		sztopic,
+		m_pDriver->get_payload_width() - MQTT_REGISTER_HDR_LEN);
+  
+  return m_predefined_topics.create_topic(sztopic, topicid) != NULL ;
+}
+#endif
+
 void MqttSnEmbed::set_retry_attributes(uint16_t Tretry, uint16_t Nretry)
 {
   m_Tretry = Tretry ;

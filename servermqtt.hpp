@@ -47,10 +47,6 @@ public:
   void set_gateway_id(const uint8_t gwid){m_gwid = gwid;}
   uint8_t get_gateway_id(){return m_gwid;}
 
-  // Server call
-  // Create a pre-defined topic. 2 options to add wide char or UTF8 string
-  bool create_predefined_topic(uint16_t topicid, const char *name) ;
-  bool create_predefined_topic(uint16_t topicid, const wchar_t *name) ;
   
   //////////////////////////////////////
   // MQTT messages
@@ -99,7 +95,14 @@ protected:
 				       void *data,
 				       int res);
 
-
+  // Use for any publish messages to client
+  void do_publish_topic(MqttConnection *con,
+			MqttTopic *t,
+			const char *sztopic,
+			void *payload,
+			uint8_t payloadlen,
+			bool retain);
+  
   // Connection state handling for clients
   void connection_watchdog(MqttConnection *p);
   void manage_client_connection(MqttConnection *p);
@@ -116,6 +119,9 @@ protected:
   void received_regack(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   void received_publish(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   void received_pubrel(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
+  void received_puback(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
+  void received_pubrec(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
+  void received_pubcomp(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   void received_subscribe(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   void received_suback(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   void received_unsubscribe(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
@@ -153,7 +159,6 @@ protected:
   MqttConnection *m_connection_head ;
 
   // Gateway connection attributes
-  MqttTopicCollection m_predefined_topics ;
   struct mosquitto *m_pmosquitto ;
   time_t m_last_advertised ;
   uint16_t m_advertise_interval ;

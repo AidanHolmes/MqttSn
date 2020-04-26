@@ -20,8 +20,14 @@
 #ifndef __MQTT_PARAMS_H
 #define __MQTT_PARAMS_H
 
+// Complier or client code can define the max queue and gateway
+// to tune memory usage
+#ifndef MQTT_MAX_QUEUE
 #define MQTT_MAX_QUEUE 50
+#endif
+#ifndef MQTT_MAX_GATEWAYS
 #define MQTT_MAX_GATEWAYS 5
+#endif
 #define MQTT_PROTOCOL 0x01
 
 #ifndef _BV

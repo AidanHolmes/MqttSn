@@ -44,7 +44,7 @@ public:
   uint16_t get_id(){return m_topicid;}
   uint16_t get_message_id(){return m_messageid;}
   void set_message_id(uint16_t mid){m_messageid = mid;}
-  char *get_topic(){return m_sztopic;}
+  const char *get_topic(){return m_sztopic;}
   MqttTopic *next(){return m_next;}
   MqttTopic *prev(){return m_prev;}
   bool is_complete(){return m_acknowledged;}

@@ -148,6 +148,13 @@ public:
 #endif
   void set_driver(IPacketDriver *pdriver){m_pDriver = pdriver;}
 
+  // Create a pre-defined topic. 2 options to add wide char or UTF8 string
+  // Applies to server or client connections
+  bool create_predefined_topic(uint16_t topicid, const char *name) ;
+#ifndef ARDUINO
+  bool create_predefined_topic(uint16_t topicid, const wchar_t *name) ;
+#endif
+  
   // Powers up and configures addresses. Goes into listen
   // mode
   bool initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *address) ;
@@ -212,6 +219,8 @@ protected:
   bool writemqtt(MqttConnection *con, uint8_t messageid, const uint8_t *buff, uint8_t len);
   void listen_mode() ;
   void send_mode() ;
+
+  MqttTopicCollection m_predefined_topics ;
 
   volatile MqttMessageQueue m_queue[MQTT_MAX_QUEUE] ;
   uint8_t m_queue_head ;

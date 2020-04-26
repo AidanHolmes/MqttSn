@@ -112,6 +112,30 @@ void ClientMqttSn::received_pubrec(uint8_t *sender_address, uint8_t *data, uint8
   writemqtt(&m_client_connection, MQTT_PUBREL, data, 2) ;
 }
 
+void ClientMqttSn::received_pubrel(uint8_t *sender_address, uint8_t *data, uint8_t len)
+{
+  if (len != 2) return ; // Invalid PUBREL message length
+  
+  if (m_client_connection.get_activity() != MqttConnection::Activity::publishing)
+    return ; // unexpected
+
+  if (!m_client_connection.is_connected()) return ;
+
+  // Check that this is coming from the expected gateway
+  if (!m_client_connection.address_match(sender_address)) return ;
+
+  // Note the server activity and reset timers
+  m_client_connection.update_activity() ;
+  uint16_t messageid = (data[0] << 8) | data[1] ;
+  DPRINT("PUBREL: {messageid = %u}\n", messageid) ;
+
+  if (m_client_connection.get_pubsub_messageid() != messageid){
+    DPRINT("PUBREL: unexpected messageid from server. Expecting %u, but received %u\n", m_client_connection.get_pubsub_messageid(), messageid) ;
+    // Ignore this, but it needs debugging in protocol
+  }
+  writemqtt(&m_client_connection, MQTT_PUBCOMP, data, 2) ;
+}
+
 void ClientMqttSn::received_pubcomp(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
   if (len != 2) return ; // Invalid PUBCOMP message length
@@ -132,15 +156,8 @@ void ClientMqttSn::received_pubcomp(uint8_t *sender_address, uint8_t *data, uint
 
 }
 
-void ClientMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, uint8_t len)
-{
-
-}
-
 void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
-  // TO DO - finish this function. Needs to find pending topicid and complete topic as subscribed
-  // Will need a callback for client
   if (len < 5) return ;
 
   uint16_t topicid = (data[1] << 8) | data[2] ; // Assuming MSB is first
@@ -186,6 +203,8 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
 
   m_client_connection.set_activity(MqttConnection::Activity::none) ;
   pthread_mutex_unlock(&m_rwlock) ;
+  if (m_fnsubscribed) (*m_fnsubscribed)(data[5] == MQTT_RETURN_ACCEPTED,
+					data[5], topicid, messageid, m_client_connection.get_gwid());
 }
 
 void ClientMqttSn::received_unsubscribe(uint8_t *sender_address, uint8_t *data, uint8_t len)
@@ -200,7 +219,72 @@ void ClientMqttSn::received_unsuback(uint8_t *sender_address, uint8_t *data, uin
 
 void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
-  DPRINT("TO DO: Client Publish\n");
+  if (len < 6) return ; // not long enough to be a publish
+  uint16_t topicid = (data[1] << 8) | data[2] ; // Assuming MSB is first
+  uint16_t messageid = (data[3] << 8) | data[4] ; // Assuming MSB is first
+  uint8_t qos = data[0] & FLAG_QOSN1 ;
+  uint8_t topic_type = data[0] & (FLAG_DEFINED_TOPIC_ID | FLAG_SHORT_TOPIC_NAME);
+  uint8_t payload[PACKET_DRIVER_MAX_PAYLOAD] ;
+  int payload_len = len-5 ;
+  
+  memcpy(payload, data+5, payload_len) ;
+
+  m_buff[0] = data[1] ; // replicate topic id 
+  m_buff[1] = data[2] ; // replicate topic id 
+  m_buff[2] = data[3] ; // replicate message id
+  m_buff[3] = data[4] ; // replicate message id
+
+  DPRINT("PUBLISH: {Flags = %X, QoS = %d, Topic ID = %u, Mess ID = %u\n",
+	 data[0], qos, topicid, messageid) ;
+
+  m_client_connection.set_pub_entities(topicid,
+				       messageid,
+				       topic_type,
+				       qos,
+				       payload_len,
+				       payload,
+				       data[0] & FLAG_RETAIN);
+
+  // Search and get the topic from ID
+  MqttTopic *t = NULL ;
+  switch(topic_type){
+  case FLAG_NORMAL_TOPIC_ID:
+    t=m_client_connection.topics.get_topic(topicid);
+    break ;
+  case FLAG_DEFINED_TOPIC_ID:
+    t = m_predefined_topics.get_topic(topicid);
+    break;
+  case FLAG_SHORT_TOPIC_NAME:
+    // Not implemented on server therefore not supported
+  default:
+    // Unknown or not implemented
+    m_buff[4] = MQTT_RETURN_NOT_SUPPORTED;
+    writemqtt(&m_client_connection, MQTT_PUBACK, m_buff, 5) ;
+    return ;
+  }
+  if (!(t)){
+    m_buff[4] = MQTT_RETURN_INVALID_TOPIC ;
+    writemqtt(&m_client_connection, MQTT_PUBACK, m_buff, 5) ;
+    return ;
+  }
+  
+  // tell client of message
+  // bool success, uint8_t return, const char* topic, uint8_t* payload, uint8_t payloadlen, uint8_t gwid
+  if (m_fnmessage) (*m_fnmessage)(true, MQTT_RETURN_ACCEPTED, t->get_topic(), payload, payload_len, m_client_connection.get_gwid());
+  
+  if (qos == FLAG_QOS0 || qos == FLAG_QOS1){
+
+    if (qos == FLAG_QOS1){
+      m_buff[4] = MQTT_RETURN_ACCEPTED ;
+      writemqtt(&m_client_connection, MQTT_PUBACK, m_buff, 5) ;
+    }
+    return ;
+  }
+  
+  // QoS 2 requires further orchestration
+  m_client_connection.set_activity(MqttConnection::Activity::publishing);
+  writemqtt(&m_client_connection, MQTT_PUBREC, m_buff+2, 2) ;
+  
 }
 
 void ClientMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uint8_t len)

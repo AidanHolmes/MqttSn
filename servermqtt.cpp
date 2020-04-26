@@ -194,7 +194,7 @@ bool ServerMqttSn::server_publish(MqttConnection *con)
   buff[2] = messageid >> 8 ; // replicate message id
   buff[3] = (messageid & 0x00FF) ; // replicate message id
 
-  char *ptopic = NULL ;
+  const char *ptopic = NULL ;
   char szshort[3] ;
   MqttTopic *topic = NULL ;
   switch(con->get_pub_topic_type()){
@@ -280,6 +280,90 @@ void ServerMqttSn::received_pubrel(uint8_t *sender_address, uint8_t *data, uint8
   writemqtt(con, MQTT_PUBCOMP, data, 2) ;
 }
 
+void ServerMqttSn::received_puback(uint8_t *sender_address, uint8_t *data, uint8_t len)
+{
+  uint16_t topicid = (data[0] << 8) | data[1] ;
+  uint16_t messageid = (data[2] << 8) | data[3] ;
+  uint8_t returncode = data[4] ;
+
+  DPRINT("PUBACK: {topicid = %u, messageid = %u, returncode = %u}\n", topicid, messageid, returncode) ;
+  
+  MqttConnection *con = search_connection_address(sender_address);
+  if (!con){
+    EPRINT("PUBACK: No registered connection for client\n") ;
+    return ;
+  }
+
+  if (con->get_activity() != MqttConnection::Activity::publishing){
+    EPRINT("PUBACK received for a non-publishing server connection\n") ;
+    return ;
+  }
+
+  con->set_activity(MqttConnection::Activity::none) ;
+  con->update_activity() ;
+  if (returncode != MQTT_RETURN_ACCEPTED){
+    DPRINT("PUBACK: {return error code = %u}\n", returncode) ;
+    return ;
+  }
+
+  if (con->get_pubsub_topicid() != topicid &&
+      con->get_pubsub_messageid() != messageid){
+    // Not the publish we were waiting for?
+    DPRINT("PUBACK: client confirmed completion of topic %u with message id %u, but topic %u with message id %u expected\n", con->get_pubsub_topicid(), con->get_pubsub_messageid(), topicid, messageid) ;
+    // Accept anyway, need to debug protocol
+  }  
+}
+
+void ServerMqttSn::received_pubrec(uint8_t *sender_address, uint8_t *data, uint8_t len)
+{
+  if (len != 2) return ; // wrong length
+  
+  MqttConnection *con = search_connection_address(sender_address);
+  if (!con){
+    EPRINT("PUBREC: No registered connection for client\n") ;
+    return ;
+  }
+  
+  if (con->get_activity() != MqttConnection::Activity::publishing){
+    EPRINT("PUBREC received for a non-publishing server\n") ;
+    return ;
+  }
+
+  uint16_t messageid = (data[0] << 8) | data[1] ; // Assuming MSB is first
+  DPRINT("PUBREC: {messageid = %u}\n", messageid) ;
+  if (con->get_pubsub_messageid() != messageid){
+    DPRINT("PUBREC: client provided message id %u, but expecting message id %u\n", con->get_pubsub_messageid(), messageid) ;
+    // Accept anyway, need to debug protocol
+  }
+  con->update_activity() ;
+  writemqtt(con, MQTT_PUBREL, data, 2) ;
+}
+
+void ServerMqttSn::received_pubcomp(uint8_t *sender_address, uint8_t *data, uint8_t len)
+{
+  if (len != 2) return ; // wrong length
+  
+  MqttConnection *con = search_connection_address(sender_address);
+  if (!con){
+    EPRINT("PUBREC: No registered connection for client\n") ;
+    return ;
+  }
+  if (con->get_activity() != MqttConnection::Activity::publishing){
+    EPRINT("PUBREL received for a non-publishing connection\n") ;
+    return ;
+  }
+
+  uint16_t messageid = (data[0] << 8) | data[1] ; // Assuming MSB is first
+  DPRINT("PUBCOMP: {messageid = %u}\n", messageid) ;
+  if (con->get_pubsub_messageid() != messageid){
+    DPRINT("PUBCOMP: client provided message id %u, but expecting message id %u\n", con->get_pubsub_messageid(), messageid) ;
+    // Accept anyway, need to debug protocol
+  }
+  con->update_activity() ;
+  con->set_activity(MqttConnection::Activity::none) ;
+}
+
+
 void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
   if (len < 3) return ;
@@ -288,7 +372,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
   uint8_t topic_type = data[0] & (FLAG_DEFINED_TOPIC_ID | FLAG_SHORT_TOPIC_NAME);
   uint8_t buff[PACKET_DRIVER_MAX_PAYLOAD] ;
   char sztopic[PACKET_DRIVER_MAX_PAYLOAD - MQTT_SUBSCRIBE_HDR_LEN + 1];
-  char *ptopic = NULL ;
+  const char *ptopic = NULL ;
   int mid = 0, ret = 0;
   uint16_t topicid = 0;
   MqttTopic *t = NULL ;
@@ -869,7 +953,6 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
 
   MqttTopic *t = NULL;
   MqttConnection *p = NULL ;
-  uint8_t buff[PACKET_DRIVER_MAX_PAYLOAD] ;
 
   if (message->payloadlen > (gateway->m_pDriver->get_payload_width() - MQTT_PUBLISH_HDR_LEN)){
     EPRINT("Payload of %u bytes is too long for publish\n", message->payloadlen);
@@ -880,43 +963,69 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
     if (p->is_connected()){
       p->topics.iterate_first_topic();
       t=p->topics.get_curr_topic();
+      // Iterate the registered topics
       while (t){
 	DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
 	if (t->match(message->topic)){
 	  DPRINT("Found match against %s\n", t->get_topic());
-	  uint8_t qos = t->get_qos() ;
-	  if (t->is_wildcard()){
-	    // Create new topic ID or use existing
-	    if (!(t = p->topics.add_topic(message->topic))) continue;
-	    t->set_qos(qos) ;
-	    // TO DO - this is bad as it will not retry if no ACK received
-	    // Do better orchestration - possibly store the topic on the connection
-	    // and have an open activity to complete all matching topics + register
-	    gateway->register_topic(p, t); // Send the topic and ignore ack
-	  }
-	  buff[0] = (message->retain?FLAG_RETAIN:0) |
-	    (qos==0?FLAG_QOS0:0) |
-	    (qos==1?FLAG_QOS1:0) |
-	    (qos==2?FLAG_QOS2:0) |
-	    FLAG_NORMAL_TOPIC_ID;
-	  uint16_t topicid = t->get_id() ;
-	  buff[1] = topicid >> 8;
-	  buff[2] = topicid & 0x00FF ;
-	  uint16_t mid = p->get_new_messageid() ;
-	  buff[3] = mid >> 8 ;
-	  buff[4] = mid & 0x00FF ;
-	  uint8_t len = message->payloadlen + 5;
-
-	  memcpy(buff+5, message->payload, message->payloadlen) ;
-	  if (gateway->writemqtt(p, MQTT_PUBLISH, buff, len)){
-	    if (qos > 0) p->set_activity(MqttConnection::Activity::publishing);
-	    buff[0] |= FLAG_DUP;
-	    p->set_cache(MQTT_PUBLISH, buff, len) ;
-	  }
+	  gateway->do_publish_topic(p, t, message->topic, message->payload, message->payloadlen, message->retain) ;
 	}
 	t=p->topics.get_next_topic();
       }
+      gateway->m_predefined_topics.iterate_first_topic() ;
+      t=gateway->m_predefined_topics.get_curr_topic();
+      // Iterate the predefined topics
+      while (t){
+	DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
+	if (t->match(message->topic)){
+	  DPRINT("Found match against %s\n", t->get_topic());
+	  gateway->do_publish_topic(p, t, message->topic, message->payload, message->payloadlen, message->retain) ;
+	}
+	t=p->topics.get_next_topic();
+      }      
     }
+  }
+}
+
+void ServerMqttSn::do_publish_topic(MqttConnection *con,
+				    MqttTopic *t,
+				    const char *sztopic,
+				    void *payload,
+				    uint8_t payloadlen,
+				    bool retain)
+{
+  uint8_t buff[PACKET_DRIVER_MAX_PAYLOAD] ;
+  uint8_t qos = t->get_qos() ;
+  if (t->is_wildcard()){
+    // Create new topic ID or use existing
+    if (!(t = con->topics.add_topic(sztopic))) return;
+    t->set_qos(qos) ;
+    // TO DO - this is bad as it will not retry if no ACK received
+    // Do better orchestration - possibly store the topic on the connection
+    // and have an open activity to complete all matching topics + register
+    register_topic(con, t); // Send the topic and ignore ack
+  }
+  buff[0] = (retain?FLAG_RETAIN:0) |
+    (qos==0?FLAG_QOS0:0) |
+    (qos==1?FLAG_QOS1:0) |
+    (qos==2?FLAG_QOS2:0) |
+    FLAG_NORMAL_TOPIC_ID;
+  uint16_t topicid = t->get_id() ;
+  buff[1] = topicid >> 8;
+  buff[2] = topicid & 0x00FF ;
+  uint16_t mid = con->get_new_messageid() ;
+  buff[3] = mid >> 8 ;
+  buff[4] = mid & 0x00FF ;
+  uint8_t len = payloadlen + 5;
+
+  memcpy(buff+5, payload, payloadlen) ;
+  if (writemqtt(con, MQTT_PUBLISH, buff, len)){
+    if (qos > 0) con->set_activity(MqttConnection::Activity::publishing);
+    buff[0] |= FLAG_DUP;
+    con->set_cache(MQTT_PUBLISH, buff, len) ;
+    // Record the subscripton data
+    con->set_pub_entities(topicid, mid, FLAG_NORMAL_TOPIC_ID, qos, payloadlen,
+			  (uint8_t *)payload, retain);
   }
 }
 
@@ -1149,7 +1258,7 @@ bool ServerMqttSn::register_topic(MqttConnection *con, MqttTopic *t)
   buff[1] = topicid & 0x00FF ;
   buff[2] = mid >> 8;
   buff[3] = mid & 0x00FF ;
-  char *sz = t->get_topic() ;
+  const char *sz = t->get_topic() ;
   size_t len = strlen(sz) ;
   memcpy(buff+4, sz, len) ; 
   if (writemqtt(con, MQTT_REGISTER, buff, 4+len)){
@@ -1160,26 +1269,6 @@ bool ServerMqttSn::register_topic(MqttConnection *con, MqttTopic *t)
     return true ;
   }
   return false ;
-}
-
-bool ServerMqttSn::create_predefined_topic(uint16_t topicid, const char *name)
-{
-  if ((uint8_t)strlen(name) > m_pDriver->get_payload_width() - MQTT_REGISTER_HDR_LEN){
-    EPRINT("Pre-defined topic %s too long\n", name) ;
-    return false ;
-  }
-  return m_predefined_topics.create_topic(name, topicid) != NULL ;
-}
-
-bool ServerMqttSn::create_predefined_topic(uint16_t topicid, const wchar_t *name)
-{
-  char sztopic[PACKET_DRIVER_MAX_PAYLOAD - MQTT_REGISTER_HDR_LEN] ;
-  
-  wchar_to_utf8(name,
-		sztopic,
-		m_pDriver->get_payload_width() - MQTT_REGISTER_HDR_LEN);
-  
-  return m_predefined_topics.create_topic(sztopic, topicid) != NULL ;
 }
 
 bool ServerMqttSn::ping(const char *szclientid)

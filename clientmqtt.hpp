@@ -42,6 +42,14 @@
 // Message ID is zero when server sends registrations (on dirty reconnect or publish wildcard topics)
 #define MQTTREGCALLBACK(fn) void (*fn)(bool, uint8_t, uint16_t, uint16_t, uint8_t)
 
+// Callback for suback confirmation from server
+// bool success, uint8_t return_code, uint16_t topic_id, uint16_t message_id, uint8_t gwid
+#define MQTTSUBCALLBACK(fn) void (*fn)(bool, uint8_t, uint16_t, uint16_t, uint8_t)
+
+// Callback for published messages sent by the server
+// bool success, uint8_t return, const char* topic, uint8_t* payload, uint8_t payloadlen, uint8_t gwid
+#define MQTTMSGCALLBACK(fn) void (*fn)(bool, uint8_t, const char*, uint8_t *, uint8_t, uint8_t)
+
 class ClientMqttSn : public MqttSnEmbed{
 public:
   ClientMqttSn();
@@ -172,6 +180,8 @@ public:
   void set_callback_gwinfo(MQTTGWCALLBACK(fn)){m_fngatewayinfo = fn ;}
   void set_callback_published(MQTTPUBCALLBACK(fn)){m_fnpublished = fn ;}
   void set_callback_register(MQTTREGCALLBACK(fn)){m_fnregister = fn ;}
+  void set_callback_subscribed(MQTTSUBCALLBACK(fn)){m_fnsubscribed = fn ;}
+  void set_callback_message(MQTTMSGCALLBACK(fn)){m_fnmessage = fn;}
 protected:
 
   // Connection state handling for clients
@@ -184,13 +194,13 @@ protected:
   virtual void received_willmsgreq(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_pingresp(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_pingreq(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
+  virtual void received_pubrel(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_disconnect(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_register(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_regack(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_puback(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_pubrec(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_pubcomp(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
-  virtual void received_subscribe(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_suback(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_unsubscribe(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
   virtual void received_unsuback(uint8_t *sender_address, uint8_t *data, uint8_t len) ;
@@ -223,6 +233,8 @@ protected:
   MQTTGWCALLBACK(m_fngatewayinfo) ;
   MQTTPUBCALLBACK(m_fnpublished) ;
   MQTTREGCALLBACK(m_fnregister) ;
+  MQTTSUBCALLBACK(m_fnsubscribed) ;
+  MQTTMSGCALLBACK(m_fnmessage) ;
 };
 
 
