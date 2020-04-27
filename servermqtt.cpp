@@ -1020,7 +1020,7 @@ void ServerMqttSn::do_publish_topic(MqttConnection *con,
 
   memcpy(buff+5, payload, payloadlen) ;
   if (writemqtt(con, MQTT_PUBLISH, buff, len)){
-    if (qos == FLAG_QOS2) con->set_activity(MqttConnection::Activity::publishing);
+    if (qos != FLAG_QOS0) con->set_activity(MqttConnection::Activity::publishing);
     else con->set_activity(MqttConnection::Activity::none);
     buff[0] |= FLAG_DUP;
     con->set_cache(MQTT_PUBLISH, buff, len) ;
