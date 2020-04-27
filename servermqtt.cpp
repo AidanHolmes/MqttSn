@@ -982,7 +982,7 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
       // Iterate the registered topics
       while (t){
 	DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
-	if (t->match(message->topic)){
+	if (t->is_subscribed() && t->match(message->topic)){
 	  DPRINT("Found match against %s\n", t->get_topic());
 	  gateway->do_publish_topic(p, t, message->topic, message->payload, message->payloadlen, message->retain) ;
 	}
@@ -993,7 +993,7 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
       // Iterate the predefined topics
       while (t){
 	DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
-	if (t->match(message->topic)){
+	if (t->is_subscribed() && t->match(message->topic)){
 	  DPRINT("Found match against %s\n", t->get_topic());
 	  gateway->do_publish_topic(p, t, message->topic, message->payload, message->payloadlen, message->retain) ;
 	}

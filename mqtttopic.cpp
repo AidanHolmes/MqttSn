@@ -182,8 +182,9 @@ MqttTopic* MqttTopicCollection::add_topic(const char *sztopic, uint16_t messagei
       return p ;
     }
     // Add 1 to be unique
-    if (p->get_id() > available_id) available_id = p->get_id() + 1 ;
+    if (p->get_id() >= available_id) available_id = p->get_id() + 1 ;
     insert_at = p ; // Save last valid topic pointer
+    //DPRINT("Add topic: searching topics, found %s at ID %u. Available ID now %u\n", p->get_topic(), p->get_id(), available_id) ;
   }
   // If collection was to run a long time with creation and deletion of topics then
   // the ID count will overflow! Overflows in 18 hours if requested every second

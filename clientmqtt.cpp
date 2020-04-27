@@ -43,6 +43,8 @@ ClientMqttSn::ClientMqttSn()
   m_fngatewayinfo = NULL ;
   m_fnpublished = NULL ;
   m_fnregister = NULL;
+  m_fnmessage = NULL ;
+  m_fnsubscribed = NULL ;
 }
 
 ClientMqttSn::~ClientMqttSn()
@@ -236,6 +238,11 @@ void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
 
   DPRINT("PUBLISH: {Flags = %X, QoS = %d, Topic ID = %u, Mess ID = %u\n",
 	 data[0], qos, topicid, messageid) ;
+
+  // Check connection status, are we connected, otherwise ignore
+  if (!m_client_connection.is_connected()) return ;
+  // Verify the source address is our connected gateway
+  if (!m_client_connection.address_match(sender_address)) return ; 
 
   m_client_connection.set_pub_entities(topicid,
 				       messageid,
