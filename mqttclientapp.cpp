@@ -43,6 +43,25 @@ int opt_irq = 0,
   opt_speed = 1,
   opt_ack = 0;
 
+void data_received(bool success,
+		   uint8_t returncode,
+		   const char* sztopic,
+		   uint8_t *payload,
+		   uint8_t payloadlen,
+		   uint8_t gwid)
+{
+  if (success){
+    printf("Publish received: Topic [%s] Payload [", sztopic) ;
+    for (uint8_t i=0; i < payloadlen; i++){
+      printf(" %X", payload[i]) ;
+    }
+    printf(" - '");
+    for (uint8_t i=0; i < payloadlen; i++){
+      printf("%c", payload[i]) ;
+    }
+    printf("']\n") ;
+  }
+}
 
 bool inputAvailable()
 {
@@ -382,6 +401,9 @@ int main(int argc, char **argv)
   int param_count = 0;
   int param_index = 0;
   Command *pFound = NULL ;
+
+  mqtt.set_callback_message(&data_received) ;
+
   // Working loop
   for ( ; ; ){
     while (inputAvailable()){
