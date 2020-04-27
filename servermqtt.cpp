@@ -983,7 +983,7 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
     }
   }
 }
-
+#include <unistd.h>
 void ServerMqttSn::do_publish_topic(MqttConnection *con,
 				    MqttTopic *t,
 				    const char *sztopic,
@@ -1006,6 +1006,7 @@ void ServerMqttSn::do_publish_topic(MqttConnection *con,
       // Do better orchestration - possibly store the topic on the connection
       // and have an open activity to complete all matching topics + register
       register_topic(con, t); // Send the topic and ignore ack
+      sleep(1); // PLEASE REMOVE ME!!!!
     }
   }
   DPRINT("Setting QoS for PUBLISH %u\n", qos) ;
