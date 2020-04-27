@@ -259,7 +259,7 @@ void MqttTopicCollection::iterate_first_topic()
 MqttTopic* MqttTopicCollection::get_topic(uint16_t topicid)
 {
   if (!topics){
-    DPRINT("No topics in collection to find from get_topic");
+    DPRINT("No topics with ID %u in collection to find from get_topic\n", topicid);
     return NULL ;
   }
   for (MqttTopic *it = topics; it; it = it->next()){
@@ -271,7 +271,7 @@ MqttTopic* MqttTopicCollection::get_topic(uint16_t topicid)
 MqttTopic* MqttTopicCollection::get_topic(const char *sztopic)
 {
   if (!topics){
-    DPRINT("No topics in collection to find from get_topic");
+    DPRINT("No topics with name %s in collection to find from get_topic\n", sztopic);
     return NULL ;
   }
   for (MqttTopic *it = topics; it; it = it->next()){

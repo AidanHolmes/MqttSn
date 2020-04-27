@@ -995,7 +995,7 @@ void ServerMqttSn::do_publish_topic(MqttConnection *con,
   if (t->is_wildcard()){
     // Create new topic ID or use existing
     if (!(t = con->topics.get_topic(sztopic))){
-      // doesn't exist as registered topic
+      // doesn't exist as registered topic. Create new topic and register
       if (!(t = con->topics.add_topic(sztopic))) return;
       t->set_qos(qos) ;
       //t->set_subscribed(true) ; // Don't subscribe to the message as unsub will not work as expected
@@ -1024,6 +1024,7 @@ void ServerMqttSn::do_publish_topic(MqttConnection *con,
     // Record the subscripton data
     con->set_pub_entities(topicid, mid, FLAG_NORMAL_TOPIC_ID, qos, payloadlen,
 			  (uint8_t *)payload, retain);
+    DPRINT("Sent PUBLISH to client for topic %s, ID %u, Message ID %u\n", sztopic, topicid, mid) ;
   }
 }
 

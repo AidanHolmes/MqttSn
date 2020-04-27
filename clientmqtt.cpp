@@ -236,7 +236,7 @@ void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
   m_buff[2] = data[3] ; // replicate message id
   m_buff[3] = data[4] ; // replicate message id
 
-  DPRINT("PUBLISH: {Flags = %X, QoS = %d, Topic ID = %u, Mess ID = %u\n",
+  DPRINT("PUBLISH: {Flags = %X, QoS = %u, Topic ID = %u, Mess ID = %u}\n",
 	 data[0], qos, topicid, messageid) ;
 
   // Check connection status, are we connected, otherwise ignore
@@ -274,6 +274,8 @@ void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
     writemqtt(&m_client_connection, MQTT_PUBACK, m_buff, 5) ;
     return ;
   }
+
+  DPRINT("Client received publish for topic %s, ID %u, Message ID %u\n", t->get_topic(), topicid, messageid) ;
   
   // tell client of message
   // bool success, uint8_t return, const char* topic, uint8_t* payload, uint8_t payloadlen, uint8_t gwid
