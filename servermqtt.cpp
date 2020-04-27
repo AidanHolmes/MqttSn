@@ -426,9 +426,19 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
   }
 
   // Register topic if new, otherwise returns existing topic
-  t = con->topics.add_topic(ptopic, messageid) ;
-  if (!t){
-    EPRINT("Something went wrong getting the topic for client subscription\n");
+  if (!(t=con->topics.get_topic(ptopic))){
+    t = con->topics.add_topic(ptopic, messageid) ;
+    if (!t){
+      EPRINT("Something went wrong getting the topic for client subscription\n");
+      return ;
+    }
+  }else{
+    DPRINT("Topic %s has already been subscribed to by the client\n", ptopic) ;
+    topicid = t->get_id();
+    buff[1] = topicid >> 8 ;
+    buff[2] = topicid & 0x00FF ;
+    buff[5] = MQTT_RETURN_ACCEPTED;
+    writemqtt(con, MQTT_SUBACK, buff, 5) ;
     return ;
   }
   t->set_qos(qos) ;
@@ -437,7 +447,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
   // Lock the publish and recording of MID 
   pthread_mutex_lock(&m_mosquittolock) ;
   // Subscribe using QoS 1 to server.
-  // TO DO - may need a config setting to specify for all mosquitto calls 
+  // TO DO - may need a config setting for all mosquitto calls 
   ret = mosquitto_subscribe(m_pmosquitto,
 			    &mid,
 			    ptopic,
@@ -454,6 +464,11 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     con->set_mosquitto_mid(mid) ;
   }
   pthread_mutex_unlock(&m_mosquittolock) ;
+  // If a topic is not a wilcard then send the registration to the client
+  // This should be fine to send after the SUBACK has gone.
+  if (!t->is_wildcard()){
+    register_topic(con, t) ; // Send topic 
+  }
   return ;
 }
 
@@ -493,6 +508,7 @@ void ServerMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
   }
   MqttTopic *t = con->topics.add_topic(sztopic, messageid) ;
   topicid = t->get_id();
+  DPRINT("Registered client topic %s with ID %u\n", sztopic, topicid) ;
   uint8_t response[5] ;
   response[0] = topicid >> 8 ; // Write topicid MSB first
   response[1] = topicid & 0x00FF ;

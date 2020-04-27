@@ -200,6 +200,7 @@ void subscribe(char params[][30], int count)
   
   if (count < 2){
     printf("subscribe qos topic|topicid\n") ;
+    return ;
   }
 
   uint8_t gwid = 0;

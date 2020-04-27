@@ -100,7 +100,8 @@ public:
   MqttTopic* get_next_topic() ;
   MqttTopic* get_curr_topic() ;
   MqttTopic* get_topic(uint16_t topicid) ;
-
+  MqttTopic* get_topic(const char *sztopic);
+  
 protected:
   MqttTopic *topics ;
   MqttTopic *m_topic_iterator ;
