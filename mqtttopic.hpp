@@ -69,7 +69,7 @@ protected:
   bool m_predefined;
   bool m_iswildcard;
   bool m_issubscribed;
-  bool m_topicqos ;
+  uint8_t m_topicqos ;
 };
 
 class MqttTopicCollection{

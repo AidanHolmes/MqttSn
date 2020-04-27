@@ -421,6 +421,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     writemqtt(con, MQTT_SUBACK, buff, 5) ;
     return ;
   }
+  DPRINT("Setting topic %s with QoS %u as subscribed topic\n", t->get_topic(), t->get_qos()) ;
   t->set_qos(qos) ;
   t->set_subscribed(true) ;
   
@@ -963,7 +964,7 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
       while (t){
 	DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
 	if (t->is_subscribed() && t->match(message->topic)){
-	  DPRINT("Found match against %s\n", t->get_topic());
+	  DPRINT("Found match against %s, QoS %u\n", t->get_topic(), t->get_qos());
 	  gateway->do_publish_topic(p, t, message->topic, FLAG_NORMAL_TOPIC_ID, message->payload, message->payloadlen, message->retain) ;
 	}
 	t=p->topics.get_next_topic();
@@ -974,7 +975,7 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
       while (t){
 	DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
 	if (t->is_subscribed() && t->match(message->topic)){
-	  DPRINT("Found match against %s\n", t->get_topic());
+	  DPRINT("Found match against %s, QoS %u\n", t->get_topic(), t->get_qos());
 	  gateway->do_publish_topic(p, t, message->topic, FLAG_DEFINED_TOPIC_ID, message->payload, message->payloadlen, message->retain) ;
 	}
 	t=p->topics.get_next_topic();

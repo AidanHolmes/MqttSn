@@ -135,7 +135,8 @@ void ClientMqttSn::received_pubrel(uint8_t *sender_address, uint8_t *data, uint8
     DPRINT("PUBREL: unexpected messageid from server. Expecting %u, but received %u\n", m_client_connection.get_pubsub_messageid(), messageid) ;
     // Ignore this, but it needs debugging in protocol
   }
-  writemqtt(&m_client_connection, MQTT_PUBCOMP, data, 2) ;
+  if(writemqtt(&m_client_connection, MQTT_PUBCOMP, data, 2))
+    m_client_connection.set_activity(MqttConnection::Activity::none) ;
 }
 
 void ClientMqttSn::received_pubcomp(uint8_t *sender_address, uint8_t *data, uint8_t len)
@@ -287,14 +288,15 @@ void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
 
     if (qos == FLAG_QOS1){
       m_buff[4] = MQTT_RETURN_ACCEPTED ;
-      writemqtt(&m_client_connection, MQTT_PUBACK, m_buff, 5) ;
+      writemqtt(&m_client_connection, MQTT_PUBACK, m_buff, 5);
     }
+    m_client_connection.set_activity(MqttConnection::Activity::none);
     return ;
   }
   
   // QoS 2 requires further orchestration
-  m_client_connection.set_activity(MqttConnection::Activity::publishing);
-  writemqtt(&m_client_connection, MQTT_PUBREC, m_buff+2, 2) ;
+  if (writemqtt(&m_client_connection, MQTT_PUBREC, m_buff+2, 2))
+    m_client_connection.set_activity(MqttConnection::Activity::publishing);
   
 }
 
@@ -867,7 +869,7 @@ bool ClientMqttSn::subscribe(uint8_t qos, const char *sztopic, bool bshorttopic)
     uint16_t topicid = (sztopic[0] << 8) | sztopic[1] ;
     return subscribe(qos, topicid, FLAG_SHORT_TOPIC_NAME);
   }
-  
+
   m_buff[0] = (qos==0?FLAG_QOS0:0) |
               (qos==1?FLAG_QOS1:0) |
               (qos==2?FLAG_QOS2:0) ;
