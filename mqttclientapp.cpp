@@ -251,8 +251,8 @@ void register_topic(char params[][30], int count)
   }
 
   uint16_t ret = pradio->register_topic(params[0]);
-  if (ret != 0){
-    printf("%s already registered with ID: %u\n", params[0], ret) ;
+  if (ret == 0){
+    printf("Cannot register %s, maybe already registered\n", params[0]) ;
   }  
 }
 

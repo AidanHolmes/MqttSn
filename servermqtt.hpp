@@ -99,6 +99,7 @@ protected:
   void do_publish_topic(MqttConnection *con,
 			MqttTopic *t,
 			const char *sztopic,
+			uint8_t topic_type,
 			void *payload,
 			uint8_t payloadlen,
 			bool retain);

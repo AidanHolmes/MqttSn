@@ -256,9 +256,11 @@ void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
   MqttTopic *t = NULL ;
   switch(topic_type){
   case FLAG_NORMAL_TOPIC_ID:
+    DPRINT("PUBLISH: Searching normal topic IDs\n") ;
     t=m_client_connection.topics.get_topic(topicid);
     break ;
   case FLAG_DEFINED_TOPIC_ID:
+    DPRINT("PUBLISH: Searching predefined topic IDs\n") ;
     t = m_predefined_topics.get_topic(topicid);
     break;
   case FLAG_SHORT_TOPIC_NAME:
@@ -341,7 +343,6 @@ void ClientMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
 
 void ClientMqttSn::received_regack(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
-  DPRINT("Regack entered\n") ;
   if (len != 5) return ;
   bool bsuccess = false ;
   
@@ -806,7 +807,7 @@ uint16_t ClientMqttSn::register_topic(const wchar_t *topic)
 #endif
 uint16_t ClientMqttSn::register_topic(const char *topic)
 {
-  uint16_t ret = 0, len = strlen(topic) ; // len excluding terminator
+  uint16_t len = strlen(topic) ; // len excluding terminator
 
   if (m_client_connection.is_connected()){
     // Reject topic if too long for payload
@@ -823,7 +824,7 @@ uint16_t ClientMqttSn::register_topic(const char *topic)
 #ifndef ARDUINO
 	pthread_mutex_unlock(&m_rwlock) ;
 #endif
-	return ret ; // already exists
+	return 0 ; // already exists
       }else{
 	DPRINT("Topic ID %u already exists but is incomplete, attempting with new mid %u\n", t->get_id(), mid) ;
 	t->set_message_id(mid) ; // Set new message id to complete

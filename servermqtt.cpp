@@ -964,7 +964,7 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
 	DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
 	if (t->is_subscribed() && t->match(message->topic)){
 	  DPRINT("Found match against %s\n", t->get_topic());
-	  gateway->do_publish_topic(p, t, message->topic, message->payload, message->payloadlen, message->retain) ;
+	  gateway->do_publish_topic(p, t, message->topic, FLAG_NORMAL_TOPIC_ID, message->payload, message->payloadlen, message->retain) ;
 	}
 	t=p->topics.get_next_topic();
       }
@@ -975,7 +975,7 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
 	DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
 	if (t->is_subscribed() && t->match(message->topic)){
 	  DPRINT("Found match against %s\n", t->get_topic());
-	  gateway->do_publish_topic(p, t, message->topic, message->payload, message->payloadlen, message->retain) ;
+	  gateway->do_publish_topic(p, t, message->topic, FLAG_DEFINED_TOPIC_ID, message->payload, message->payloadlen, message->retain) ;
 	}
 	t=p->topics.get_next_topic();
       }
@@ -986,6 +986,7 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
 void ServerMqttSn::do_publish_topic(MqttConnection *con,
 				    MqttTopic *t,
 				    const char *sztopic,
+				    uint8_t topic_type,
 				    void *payload,
 				    uint8_t payloadlen,
 				    bool retain)
@@ -1006,7 +1007,8 @@ void ServerMqttSn::do_publish_topic(MqttConnection *con,
       register_topic(con, t); // Send the topic and ignore ack
     }
   }
-  buff[0] = (retain?FLAG_RETAIN:0) | qos | FLAG_NORMAL_TOPIC_ID;
+  DPRINT("Setting QoS for PUBLISH %u\n", qos) ;
+  buff[0] = (retain?FLAG_RETAIN:0) | qos | topic_type;
   uint16_t topicid = t->get_id() ;
   buff[1] = topicid >> 8;
   buff[2] = topicid & 0x00FF ;
