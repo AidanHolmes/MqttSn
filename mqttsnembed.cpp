@@ -330,6 +330,7 @@ bool MqttSnEmbed::addrwritemqtt(const uint8_t *address,
 			       const uint8_t *buff,
 			       uint8_t len)
 {
+  pthread_mutex_lock(&m_rwlock) ;
   uint8_t send_buff[PACKET_DRIVER_MAX_PAYLOAD] ;
   // includes the length field and message type
   uint8_t payload_len = len+MQTT_HDR_LEN;
@@ -339,7 +340,9 @@ bool MqttSnEmbed::addrwritemqtt(const uint8_t *address,
   if (buff != NULL && len > 0)
     memcpy(send_buff+MQTT_HDR_LEN, buff, len) ;
 
-  return m_pDriver->send(address, send_buff, payload_len) ;
+  bool ret = m_pDriver->send(address, send_buff, payload_len) ;
+  pthread_mutex_unlock(&m_rwlock) ;
+  return ret;
 }
 
 #ifndef ARDUINO
