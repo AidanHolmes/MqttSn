@@ -171,7 +171,7 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
   // Verify the source address is our connected gateway
   if (!m_client_connection.address_match(sender_address)) return ; 
 
-  pthread_mutex_lock(&m_rwlock) ;
+  pthread_mutex_lock(&m_mqttlock) ;
 
   m_client_connection.update_activity() ; // Reset timers
   
@@ -182,10 +182,20 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
   switch(data[5]){
   case MQTT_RETURN_ACCEPTED:
     DPRINT("SUBACK: {return code = Accepted}\n") ;
-    if (! (t=m_client_connection.topics.complete_topic(messageid, topicid))){
+    if ( (t=m_client_connection.topics.get_topic(topicid)) ){
+      // Topic exists already which it should be complete the registration
+      if (!t->is_complete()){
+	DPRINT("Topic %u already exists but not completed reg, completing registration now\n", topicid) ;
+	// Complete the topic anyway
+	t->set_message_id(messageid) ;
+	t->complete(topicid) ;
+      }
+      // Set subscription flag
+      t->set_subscribed(true) ;
+    }else if (! (t=m_client_connection.topics.complete_topic(messageid, topicid))){
       // Topic completion may not work if the topicid was already registered or
       // previously subscribed
-      EPRINT("SUBACK: Client cannot complete topic ID %u. Topic may already be registered\n", topicid) ;
+      EPRINT("SUBACK: Client cannot complete topic ID %u for mid %u\n", topicid, messageid) ;
     }else{
       DPRINT("SUBACK: Topic %s completed and registered with ID %u\n", t->get_topic(), t->get_id()) ;
     }
@@ -205,7 +215,7 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
   }
 
   m_client_connection.set_activity(MqttConnection::Activity::none) ;
-  pthread_mutex_unlock(&m_rwlock) ;
+  pthread_mutex_unlock(&m_mqttlock) ;
   if (m_fnsubscribed) (*m_fnsubscribed)(data[5] == MQTT_RETURN_ACCEPTED,
 					data[5], topicid, messageid, m_client_connection.get_gwid());
 }
@@ -316,7 +326,7 @@ void ClientMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
   // Verify the source address is our connected gateway
   if (!m_client_connection.address_match(sender_address)) return ; 
 
-  pthread_mutex_lock(&m_rwlock) ;
+  pthread_mutex_lock(&m_mqttlock) ;
 
   m_client_connection.update_activity() ; // Reset timers
   
@@ -335,7 +345,7 @@ void ClientMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
   response[3] = data[3] ; // Echo back the messageid received
   response[4] = MQTT_RETURN_ACCEPTED ;
   writemqtt(&m_client_connection, MQTT_REGACK, response, 5) ;
-  pthread_mutex_unlock(&m_rwlock) ;
+  pthread_mutex_unlock(&m_mqttlock) ;
 
   // Call the client callback to inform of new topic
   // Implicitly acceped, returns zero for message ID as client didn't request
@@ -390,7 +400,7 @@ void ClientMqttSn::received_pingresp(uint8_t *sender_address, uint8_t *data, uin
 {
   DPRINT("PINGRESP\n") ;
 #ifndef ARDUINO
-  pthread_mutex_lock(&m_rwlock) ;
+  pthread_mutex_lock(&m_mqttlock) ;
 #endif
   MqttGwInfo *gw = get_gateway_address(sender_address);
   if (gw){
@@ -402,7 +412,7 @@ void ClientMqttSn::received_pingresp(uint8_t *sender_address, uint8_t *data, uin
     }
   }
 #ifndef ARDUINO
-  pthread_mutex_unlock(&m_rwlock) ;
+  pthread_mutex_unlock(&m_mqttlock) ;
 #endif
 }
 
@@ -430,7 +440,7 @@ void ClientMqttSn::received_advertised(uint8_t *sender_address, uint8_t *data, u
   DPRINT("ADVERTISED: {gw = %u, duration = %u}\n", data[0], duration) ;
 
 #ifndef ARDUINO
-  pthread_mutex_lock(&m_rwlock) ;
+  pthread_mutex_lock(&m_mqttlock) ;
 #endif
   // Call update gateway. This returns false if gateway is not known
   if (!update_gateway(sender_address, data[0], duration)){
@@ -450,7 +460,7 @@ void ClientMqttSn::received_advertised(uint8_t *sender_address, uint8_t *data, u
     m_client_connection.update_activity() ;
   }
 #ifndef ARDUINO
-  pthread_mutex_unlock(&m_rwlock) ;
+  pthread_mutex_unlock(&m_mqttlock) ;
 #endif
 }
 
@@ -514,7 +524,7 @@ void ClientMqttSn::received_gwinfo(uint8_t *sender_address, uint8_t *data, uint8
   
   bool gw_updated = false  ;
 #ifndef ARDUINO
-  pthread_mutex_lock(&m_rwlock) ;
+  pthread_mutex_lock(&m_mqttlock) ;
 #endif
   // Reset activity if searching was requested
   if (m_client_connection.get_activity() == MqttConnection::Activity::searching){
@@ -536,7 +546,7 @@ void ClientMqttSn::received_gwinfo(uint8_t *sender_address, uint8_t *data, uint8
     if (m_fngatewayinfo) (*m_fngatewayinfo)(true, data[0]) ;
   }
 #ifndef ARDUINO
-  pthread_mutex_unlock(&m_rwlock) ;
+  pthread_mutex_unlock(&m_mqttlock) ;
 #endif
 
   // It's possible that the gateway cannot be saved if there's already a full list
@@ -549,12 +559,12 @@ void ClientMqttSn::received_connack(uint8_t *sender_address, uint8_t *data, uint
 {
   bool bsuccess = false ;
 #ifndef ARDUINO
-  pthread_mutex_lock(&m_rwlock) ;
+  pthread_mutex_lock(&m_mqttlock) ;
 #endif
   // Was this client connecting?
   if (m_client_connection.get_state() != MqttConnection::State::connecting){
 #ifndef ARDUINO
-    pthread_mutex_unlock(&m_rwlock) ;
+    pthread_mutex_unlock(&m_mqttlock) ;
 #endif
     return ; // not enabled and expected
   }
@@ -599,7 +609,7 @@ void ClientMqttSn::received_connack(uint8_t *sender_address, uint8_t *data, uint
   m_client_connection.set_activity(MqttConnection::Activity::none) ;
     
 #ifndef ARDUINO
-  pthread_mutex_unlock(&m_rwlock) ;
+  pthread_mutex_unlock(&m_mqttlock) ;
 #endif
 }
 
@@ -815,7 +825,7 @@ uint16_t ClientMqttSn::register_topic(const char *topic)
     // Reject topic if too long for payload
     if (len > m_pDriver->get_payload_width() - MQTT_REGISTER_HDR_LEN) return 0;
 #ifndef ARDUINO
-    pthread_mutex_lock(&m_rwlock) ;
+    pthread_mutex_lock(&m_mqttlock) ;
 #endif
     uint16_t mid = m_client_connection.get_new_messageid() ;
     // Register the topic. Return value is zero if topic is new
@@ -824,7 +834,7 @@ uint16_t ClientMqttSn::register_topic(const char *topic)
       if (t->is_complete()){
 	DPRINT("reg_topic returned an existing & complete topic ID %u\n", t->get_id()) ;
 #ifndef ARDUINO
-	pthread_mutex_unlock(&m_rwlock) ;
+	pthread_mutex_unlock(&m_mqttlock) ;
 #endif
 	return 0 ; // already exists
       }else{
@@ -836,7 +846,7 @@ uint16_t ClientMqttSn::register_topic(const char *topic)
     }
 
 #ifndef ARDUINO
-    pthread_mutex_unlock(&m_rwlock) ;
+    pthread_mutex_unlock(&m_mqttlock) ;
 #endif
     m_buff[0] = 0 ;
     m_buff[1] = 0 ; // topic ID set to zero
@@ -879,16 +889,14 @@ bool ClientMqttSn::subscribe(uint8_t qos, const char *sztopic, bool bshorttopic)
 
   memcpy (m_buff+3, sztopic, topic_len) ;
 
-  // TO DO - register topic as being subscribed, leave as pending until SUBACK received and close
-  // Need this to associate topicid with subscribed topic.
-  
+  MqttTopic *t = m_client_connection.topics.reg_topic(sztopic, mid) ;
+  if (t->get_id() > 0 && t->is_subscribed()){
+    DPRINT("INFO: Subscription to topic %s is already registered with an ID %u\n", sztopic, t->get_id());
+    return false;
+  }
   
   if (writemqtt(&m_client_connection, MQTT_SUBSCRIBE, m_buff, topic_len+3)){
     m_client_connection.set_activity(MqttConnection::Activity::subscribing);
-    MqttTopic *t = m_client_connection.topics.reg_topic(sztopic, mid) ;
-    if (t->get_id() > 0){
-      DPRINT("INFO: Subscription to topic %s is already registered with an ID %u\n", sztopic, t->get_id());
-    }
     // Update cached version to set the DUP flag
     m_buff[0] |= FLAG_DUP;
     m_client_connection.set_cache(MQTT_PUBLISH, m_buff, topic_len+3) ;
@@ -901,6 +909,12 @@ bool ClientMqttSn::subscribe(uint8_t qos, uint16_t topicid, uint8_t topictype)
 {
   if (!m_client_connection.is_connected()) return false ;
   if (qos > 2 || (topictype != FLAG_DEFINED_TOPIC_ID && topictype != FLAG_SHORT_TOPIC_NAME)) return false ;
+
+  // Check if topic exists for defined topic
+  if (topictype == FLAG_DEFINED_TOPIC_ID && !m_predefined_topics.get_topic(topicid)){
+    EPRINT("Topic ID %u is not a predefined topic id for subscription\n", topicid) ;
+    return false;
+  }
 
   m_buff[0] = 
     (qos==0?FLAG_QOS0:0) |
@@ -1065,11 +1079,11 @@ bool ClientMqttSn::connect(uint8_t gwid, bool will, bool clean, uint16_t keepali
   m_buff[3] = keepalive & 0x00FF ;
 
 #ifndef ARDUINO
-  pthread_mutex_lock(&m_rwlock) ;
+  pthread_mutex_lock(&m_mqttlock) ;
 #endif
   if (!(gw = get_gateway(gwid))){
 #ifndef ARDUINO
-    pthread_mutex_unlock(&m_rwlock) ;
+    pthread_mutex_unlock(&m_mqttlock) ;
 #endif
     EPRINT("Gateway ID unknown") ;
     return false ;
@@ -1080,7 +1094,7 @@ bool ClientMqttSn::connect(uint8_t gwid, bool will, bool clean, uint16_t keepali
   m_client_connection.set_gwid(gwid) ;
   m_client_connection.set_address(gw->get_address(), m_pDriver->get_address_len()) ;
 #ifndef ARDUINO
-  pthread_mutex_unlock(&m_rwlock) ;
+  pthread_mutex_unlock(&m_mqttlock) ;
 #endif
   
   uint8_t len = strlen(m_szclient_id) ;

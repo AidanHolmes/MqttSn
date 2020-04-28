@@ -229,7 +229,10 @@ protected:
   uint16_t m_Nretry ;
 
   IPacketDriver *m_pDriver ;
-  
+
+#ifndef ARDUINO
+  pthread_mutex_t m_mqttlock ;
+#endif
 };
 
 

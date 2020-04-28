@@ -130,10 +130,12 @@ void ServerMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
     return ;    
   }
 
+  pthread_mutex_lock(&m_mosquittolock) ;
   // Not a QoS -1 message, search for connection
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     EPRINT("No registered connection for client\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return;
   }
   
@@ -149,6 +151,7 @@ void ServerMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
 			data[0] & FLAG_RETAIN);
   if (!server_publish(con)){
     EPRINT("Could not complete the PUBLISH message with the MQTT server\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;  
   }
   
@@ -156,6 +159,7 @@ void ServerMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
   if (qos == FLAG_QOS2){
     con->set_activity(MqttConnection::Activity::publishing);
   }
+  pthread_mutex_unlock(&m_mosquittolock) ;
 }
 
 bool ServerMqttSn::server_publish(MqttConnection *con)
@@ -167,6 +171,7 @@ bool ServerMqttSn::server_publish(MqttConnection *con)
     return false;
   }
 
+  pthread_mutex_lock(&m_mosquittolock) ;
   uint16_t topicid = con->get_pubsub_topicid() ;
   uint16_t messageid = con->get_pubsub_messageid() ;
   buff[0] = topicid >> 8 ; // replicate topic id 
@@ -191,6 +196,7 @@ bool ServerMqttSn::server_publish(MqttConnection *con)
       buff[4] = MQTT_RETURN_INVALID_TOPIC ;
       writemqtt(con, MQTT_PUBACK, buff, 5) ;
       con->set_activity(MqttConnection::Activity::none);
+      pthread_mutex_unlock(&m_mosquittolock) ;
       return false;
     }
     
@@ -203,6 +209,7 @@ bool ServerMqttSn::server_publish(MqttConnection *con)
       buff[4] = MQTT_RETURN_INVALID_TOPIC ;
       writemqtt(con, MQTT_PUBACK, buff, 5) ;
       con->set_activity(MqttConnection::Activity::none);
+      pthread_mutex_unlock(&m_mosquittolock) ;
       return false;
     }
     
@@ -210,11 +217,11 @@ bool ServerMqttSn::server_publish(MqttConnection *con)
     break;
   default:
     con->set_activity(MqttConnection::Activity::none);
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return false ;
   }
 
   // Lock the publish and recording of MID 
-  pthread_mutex_lock(&m_mosquittolock) ;
   ret = mosquitto_publish(m_pmosquitto,
 			  &mid,
 			  ptopic,
@@ -223,12 +230,12 @@ bool ServerMqttSn::server_publish(MqttConnection *con)
 			  1,
 			  con->get_pub_retain()) ;
   if (ret != MOSQ_ERR_SUCCESS){
-    pthread_mutex_unlock(&m_mosquittolock) ;
     con->set_activity(MqttConnection::Activity::none);
       
     EPRINT("Mosquitto publish failed with code %d\n", ret);
     buff[4] = MQTT_RETURN_CONGESTION ;
     writemqtt(con, MQTT_PUBACK, buff, 5) ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return false ;
   }
   DPRINT("Sending Mosquitto publish with mid %d\n", mid) ;
@@ -243,21 +250,24 @@ void ServerMqttSn::received_pubrel(uint8_t *sender_address, uint8_t *data, uint8
   if (len != 2) return ; // Invalid PUBREL message length
   uint16_t messageid = (data[0] << 8) | data[1] ; // Assuming MSB is first
   DPRINT("PUBREL {messageid = %u}\n", messageid) ;
-    
+
+  pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     EPRINT("No registered connection for client\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return;
   }
   if (con->get_activity() != MqttConnection::Activity::publishing){
     EPRINT("PUBREL received for a non-publishing client\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
   
   con->update_activity() ;
   con->set_activity(MqttConnection::Activity::none) ; // reset activity
-  
   writemqtt(con, MQTT_PUBCOMP, data, 2) ;
+  pthread_mutex_unlock(&m_mosquittolock) ;  
 }
 
 void ServerMqttSn::received_puback(uint8_t *sender_address, uint8_t *data, uint8_t len)
@@ -267,15 +277,18 @@ void ServerMqttSn::received_puback(uint8_t *sender_address, uint8_t *data, uint8
   uint8_t returncode = data[4] ;
 
   DPRINT("PUBACK: {topicid = %u, messageid = %u, returncode = %u}\n", topicid, messageid, returncode) ;
-  
+
+  pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     EPRINT("PUBACK: No registered connection for client\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
 
   if (con->get_activity() != MqttConnection::Activity::publishing){
     EPRINT("PUBACK received for a non-publishing server connection\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
 
@@ -283,6 +296,7 @@ void ServerMqttSn::received_puback(uint8_t *sender_address, uint8_t *data, uint8
   con->update_activity() ;
   if (returncode != MQTT_RETURN_ACCEPTED){
     DPRINT("PUBACK: {return error code = %u}\n", returncode) ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
 
@@ -292,20 +306,24 @@ void ServerMqttSn::received_puback(uint8_t *sender_address, uint8_t *data, uint8
     DPRINT("PUBACK: client confirmed completion of topic %u with message id %u, but topic %u with message id %u expected\n", con->get_pubsub_topicid(), con->get_pubsub_messageid(), topicid, messageid) ;
     // Accept anyway, need to debug protocol
   }  
+  pthread_mutex_unlock(&m_mosquittolock) ;
 }
 
 void ServerMqttSn::received_pubrec(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
   if (len != 2) return ; // wrong length
-  
+
+  pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     EPRINT("PUBREC: No registered connection for client\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
   
   if (con->get_activity() != MqttConnection::Activity::publishing){
     EPRINT("PUBREC received for a non-publishing server\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
 
@@ -317,19 +335,23 @@ void ServerMqttSn::received_pubrec(uint8_t *sender_address, uint8_t *data, uint8
   }
   con->update_activity() ;
   writemqtt(con, MQTT_PUBREL, data, 2) ;
+  pthread_mutex_unlock(&m_mosquittolock) ;
 }
 
 void ServerMqttSn::received_pubcomp(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
   if (len != 2) return ; // wrong length
-  
+
+  pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     EPRINT("PUBREC: No registered connection for client\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
   if (con->get_activity() != MqttConnection::Activity::publishing){
     EPRINT("PUBREL received for a non-publishing connection\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
 
@@ -341,6 +363,7 @@ void ServerMqttSn::received_pubcomp(uint8_t *sender_address, uint8_t *data, uint
   }
   con->update_activity() ;
   con->set_activity(MqttConnection::Activity::none) ;
+  pthread_mutex_unlock(&m_mosquittolock) ;
 }
 
 
@@ -363,9 +386,11 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
   buff[3] = data[1] ; // Message ID
   buff[4] = data[2] ; // Message ID
   
+  pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     EPRINT("No registered connection for client\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
 
@@ -373,6 +398,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     EPRINT("Gateway is not connected to the Mosquitto server to process Subscribe\n") ;
     buff[5] = MQTT_RETURN_CONGESTION;
     writemqtt(con, MQTT_SUBACK, buff, 5) ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
 
@@ -392,6 +418,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
       // Invalid topic, send client SUBACK with error
       buff[5] = MQTT_RETURN_INVALID_TOPIC ;
       writemqtt(con, MQTT_SUBACK, buff, 5) ;
+      pthread_mutex_unlock(&m_mosquittolock) ;
       return ;
     }
     // Reference the predefined topic
@@ -402,6 +429,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     EPRINT("Unknown topic type %u from client\n", topic_type) ;
     buff[5] = MQTT_RETURN_INVALID_TOPIC ;
     writemqtt(con, MQTT_SUBACK, buff, 5) ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
 
@@ -410,6 +438,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     t = con->topics.add_topic(ptopic, messageid) ;
     if (!t){
       EPRINT("Something went wrong getting the topic for client subscription\n");
+      pthread_mutex_unlock(&m_mosquittolock) ;
       return ;
     }
   }else{
@@ -419,14 +448,13 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     buff[2] = topicid & 0x00FF ;
     buff[5] = MQTT_RETURN_ACCEPTED;
     writemqtt(con, MQTT_SUBACK, buff, 5) ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
   DPRINT("Setting topic %s with QoS %u as subscribed topic\n", t->get_topic(), t->get_qos()) ;
   t->set_qos(qos) ;
   t->set_subscribed(true) ;
   
-  // Lock the publish and recording of MID 
-  pthread_mutex_lock(&m_mosquittolock) ;
   // Subscribe using QoS 1 to server.
   // TO DO - may need a config setting for all mosquitto calls 
   ret = mosquitto_subscribe(m_pmosquitto,
@@ -444,12 +472,12 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     con->set_sub_entities(t->is_wildcard()?0:t->get_id(), messageid, qos) ;
     con->set_mosquitto_mid(mid) ;
   }
-  pthread_mutex_unlock(&m_mosquittolock) ;
   // If a topic is not a wilcard then send the registration to the client
   // This should be fine to send after the SUBACK has gone.
   if (!t->is_wildcard()){
     register_topic(con, t) ; // Send topic 
   }
+  pthread_mutex_unlock(&m_mosquittolock) ;
   return ;
 }
 
@@ -480,11 +508,11 @@ void ServerMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
   sztopic[len-4] = '\0';
 
   DPRINT("REGISTER: {topicid: %u, messageid: %u, topic %s}\n", topicid, messageid, sztopic) ;
-  pthread_mutex_lock(&m_rwlock) ;
+  pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection_address(sender_address) ;
   if (!con){
     DPRINT("REGISTER - Cannot find a connection for the client\n") ;
-    pthread_mutex_unlock(&m_rwlock) ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
   MqttTopic *t = con->topics.add_topic(sztopic, messageid) ;
@@ -497,7 +525,7 @@ void ServerMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
   response[3] = data[3] ; // Echo back the messageid received
   response[4] = MQTT_RETURN_ACCEPTED ;
   writemqtt(con, MQTT_REGACK, response, 5) ;
-  pthread_mutex_unlock(&m_rwlock) ;
+  pthread_mutex_unlock(&m_mosquittolock) ;
 }
 
 void ServerMqttSn::received_regack(uint8_t *sender_address, uint8_t *data, uint8_t len)
@@ -510,6 +538,7 @@ void ServerMqttSn::received_regack(uint8_t *sender_address, uint8_t *data, uint8
 
   DPRINT("REGACK: {topicid = %u, messageid = %u, returncode = %u}\n", topicid, messageid, returncode) ;
 
+  pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection_address(sender_address) ;
   if (con->is_connected()){
     if (con->get_activity() == MqttConnection::Activity::registeringall){
@@ -528,20 +557,21 @@ void ServerMqttSn::received_regack(uint8_t *sender_address, uint8_t *data, uint8
       con->set_activity(MqttConnection::Activity::none) ;
     }
   }
+  pthread_mutex_unlock(&m_mosquittolock) ;
 
 }
 
 void ServerMqttSn::received_pingresp(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
   DPRINT("PINGRESP\n") ;
-  pthread_mutex_lock(&m_rwlock) ;
+  pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection_address(sender_address) ;
   if (con){
     // just update the last activity timestamp
     con->update_activity() ;
   }
   
-  pthread_mutex_unlock(&m_rwlock) ;
+  pthread_mutex_unlock(&m_mosquittolock) ;
 
 }
 
@@ -558,14 +588,14 @@ void ServerMqttSn::received_pingreq(uint8_t *sender_address, uint8_t *data, uint
     DPRINT("PINGREQ\n") ;
   }
   #endif
-  pthread_mutex_lock(&m_rwlock) ;
+  pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection_address(sender_address) ;
   if (con){
     con->update_activity() ;
   }
-  pthread_mutex_unlock(&m_rwlock) ;
   
   addrwritemqtt(sender_address, MQTT_PINGRESP, NULL, 0) ;
+  pthread_mutex_unlock(&m_mosquittolock) ;
  
 }
 
@@ -579,7 +609,9 @@ void ServerMqttSn::received_searchgw(uint8_t *sender_address, uint8_t *data, uin
   // a broadcast message back.
   if (m_broker_connected){
     buff[0] = m_gwid ;
+    pthread_mutex_lock(&m_mosquittolock) ;
     addrwritemqtt(sender_address, MQTT_GWINFO, buff, 1) ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
   }
 
 }
@@ -690,7 +722,7 @@ void ServerMqttSn::received_connect(uint8_t *sender_address, uint8_t *data, uint
     return ;
   }
 
-  pthread_mutex_lock(&m_rwlock) ;
+  pthread_mutex_lock(&m_mosquittolock) ;
 
   MqttConnection *con = search_cached_connection(szClientID) ;
   if (!con){
@@ -703,7 +735,7 @@ void ServerMqttSn::received_connect(uint8_t *sender_address, uint8_t *data, uint
   }
   if (!con){
     EPRINT("Cannot create a new connection record for client %s\n", szClientID) ;
-    pthread_mutex_unlock(&m_rwlock) ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ; // something went wrong with the allocation
   }
 
@@ -729,8 +761,6 @@ void ServerMqttSn::received_connect(uint8_t *sender_address, uint8_t *data, uint
   // If WILL if flagged then set the flags for the message and topic
   bool will = ((FLAG_WILL & data[0]) > 0) ;
 
-  pthread_mutex_unlock(&m_rwlock) ;
-
   if (will){
     DPRINT("Requesting WILLTOPICREQ from client %s\n", szClientID);
     // Start with will topic request
@@ -744,6 +774,7 @@ void ServerMqttSn::received_connect(uint8_t *sender_address, uint8_t *data, uint
     con->set_state(MqttConnection::State::connected) ;
     con->set_activity(MqttConnection::Activity::none) ;
   }
+  pthread_mutex_unlock(&m_mosquittolock) ;
 }
 
 void ServerMqttSn::complete_client_connection(MqttConnection *p)
@@ -769,10 +800,12 @@ void ServerMqttSn::received_willtopic(uint8_t *sender_address, uint8_t *data, ui
 {
   char utf8[PACKET_DRIVER_MAX_PAYLOAD - MQTT_WILLTOPIC_HDR_LEN+1] ;
 
+  pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection_address(sender_address) ;
   uint8_t buff[1] ;
   if (!con){
     EPRINT("WillTopic could not find the client connection\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
   
@@ -781,6 +814,7 @@ void ServerMqttSn::received_willtopic(uint8_t *sender_address, uint8_t *data, ui
       con->get_activity() != MqttConnection::Activity::willtopic){
     // WILLTOPIC is only used during connection setup. This is out of sequence
     EPRINT("Out of sequence WILLTOPIC received\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
 
@@ -810,6 +844,7 @@ void ServerMqttSn::received_willtopic(uint8_t *sender_address, uint8_t *data, ui
     con->set_activity(MqttConnection::Activity::willmessage);
     writemqtt(con, MQTT_WILLMSGREQ, NULL, 0) ;
   }
+  pthread_mutex_unlock(&m_mosquittolock) ;
 
 }
 
@@ -817,12 +852,14 @@ void ServerMqttSn::received_willmsg(uint8_t *sender_address, uint8_t *data, uint
 {
   uint8_t utf8[PACKET_DRIVER_MAX_PAYLOAD] ;
 
+  pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection_address(sender_address) ;
   uint8_t buff[1] ;
   if (!con){
     EPRINT("WillMsg could not find the client connection\n") ;
     buff[0] = MQTT_RETURN_CONGESTION ; // There is no "who are you?" response so this will do
     writemqtt(con, MQTT_CONNACK, buff, 1) ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
 
@@ -831,6 +868,7 @@ void ServerMqttSn::received_willmsg(uint8_t *sender_address, uint8_t *data, uint
       con->get_activity() != MqttConnection::Activity::willmessage){
     // WILLMSG is only used during connection setup. This is out of sequence
     EPRINT("Out of sequence WILLMSG received\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
 
@@ -856,14 +894,18 @@ void ServerMqttSn::received_willmsg(uint8_t *sender_address, uint8_t *data, uint
   writemqtt(con, MQTT_CONNACK, buff, 1) ;
   con->set_state(MqttConnection::State::connected) ;
   con->set_activity(MqttConnection::Activity::none) ;
+
+  pthread_mutex_unlock(&m_mosquittolock) ;
 }
 
 void ServerMqttSn::received_disconnect(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
   // Disconnect request from client
+  pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     DPRINT("Disconnect received from unknown client. Ignoring\n") ;
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
   time_t time_now = time(NULL) ;
@@ -879,7 +921,7 @@ void ServerMqttSn::received_disconnect(uint8_t *sender_address, uint8_t *data, u
   con->update_activity() ;
 
   writemqtt(con, MQTT_DISCONNECT, NULL, 0) ;
-  
+  pthread_mutex_unlock(&m_mosquittolock) ;
 }
 
 void ServerMqttSn::initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *address)
@@ -955,7 +997,8 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
     EPRINT("Payload of %u bytes is too long for publish\n", message->payloadlen);
     return ;
   }
-  
+
+  gateway->lock_mosquitto() ; // Using topic iterators, lock section
   for(p = gateway->m_connection_head; p != NULL; p=p->next){
     if (p->is_connected()){
       p->topics.iterate_first_topic();
@@ -982,6 +1025,7 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
       }
     }
   }
+  gateway->unlock_mosquitto() ;
 }
 #include <unistd.h>
 void ServerMqttSn::do_publish_topic(MqttConnection *con,
@@ -1043,10 +1087,10 @@ void ServerMqttSn::gateway_subscribe_callback(struct mosquitto *m,
 
   gateway->lock_mosquitto() ;
   MqttConnection *con = gateway->search_mosquitto_id(mid) ;
-  gateway->unlock_mosquitto();
 
   if (!con){
     EPRINT("Cannot find Mosquitto ID %d in any connection for subscription\n", mid) ;
+    gateway->unlock_mosquitto();
     return ;
   }
 
@@ -1063,6 +1107,7 @@ void ServerMqttSn::gateway_subscribe_callback(struct mosquitto *m,
     DPRINT("Sending SUBACK with topic id %u and message id %u\n", topicid, messageid);
     con->set_activity(MqttConnection::Activity::none);
   }
+  gateway->unlock_mosquitto();
 }
 
 void ServerMqttSn::gateway_publish_callback(struct mosquitto *m,
@@ -1075,10 +1120,10 @@ void ServerMqttSn::gateway_publish_callback(struct mosquitto *m,
   // Lock until publish has completed and the mid logged
   gateway->lock_mosquitto() ;
   MqttConnection *con = gateway->search_mosquitto_id(mid) ;
-  gateway->unlock_mosquitto();
 
   if (!con){
     EPRINT("Cannot find Mosquitto ID %d in any connection. Could be a QoS -1 message\n", mid) ;
+    gateway->unlock_mosquitto();
     return ;
   }
 
@@ -1106,23 +1151,30 @@ void ServerMqttSn::gateway_publish_callback(struct mosquitto *m,
     con->set_activity(MqttConnection::Activity::none);
     EPRINT("Invalid QoS %d\n", con->get_pubsub_qos()) ;
   }
+  gateway->unlock_mosquitto();
 }
 
 void ServerMqttSn::gateway_disconnect_callback(struct mosquitto *m,
 						    void *data,
 						    int res)
 {
+  ServerMqttSn *gateway = (ServerMqttSn*)data ;
   DPRINT("Mosquitto disconnect: %d\n", res) ;
-  ((ServerMqttSn*)data)->m_broker_connected = false ;
+  gateway->lock_mosquitto();
+  gateway->m_broker_connected = false ;
+  gateway->unlock_mosquitto();
 }
 
 void ServerMqttSn::gateway_connect_callback(struct mosquitto *m,
 						 void *data,
 						 int res)
 {
+  ServerMqttSn *gateway = (ServerMqttSn*)data ;
   DPRINT("Mosquitto connect: %d\n", res) ;
   // Gateway connected to the broker
-  if (res == 0) ((ServerMqttSn*)data)->m_broker_connected = true ;
+  gateway->lock_mosquitto();
+  if (res == 0) gateway->m_broker_connected = true ;
+  gateway->unlock_mosquitto();
 }
 
 void ServerMqttSn::send_will(MqttConnection *con)
@@ -1130,8 +1182,8 @@ void ServerMqttSn::send_will(MqttConnection *con)
   if (!m_mosquitto_initialised) return ; // cannot process
 
   int mid = 0 ;
+  pthread_mutex_lock(&m_mosquittolock) ;
   if (strlen(con->get_will_topic()) > 0){
-    pthread_mutex_lock(&m_mosquittolock) ;
     int ret = mosquitto_publish(m_pmosquitto,
 				&mid,
 				con->get_will_topic(),
@@ -1144,14 +1196,14 @@ void ServerMqttSn::send_will(MqttConnection *con)
     }else{
       con->set_mosquitto_mid(mid) ;
     }
-    pthread_mutex_unlock(&m_mosquittolock) ;
-
     DPRINT("Sending Mosquitto WILL publish with mid %d\n", mid) ;
   }
+  pthread_mutex_unlock(&m_mosquittolock) ;
 }
 
 void ServerMqttSn::manage_client_connection(MqttConnection *p)
 {
+  pthread_mutex_lock(&m_mosquittolock) ;
   if (p->lost_contact()){
     // Client is not a sleeping client and is also
     // inactive
@@ -1160,7 +1212,6 @@ void ServerMqttSn::manage_client_connection(MqttConnection *p)
     DPRINT("Disconnecting lost client: %s\n", p->get_client_id()) ;
     writemqtt(p, MQTT_DISCONNECT, NULL, 0) ;
     send_will(p) ;
-    return ;
   }
   /* Don't ping the client, just use pingreq from client to update activity
   else{
@@ -1172,6 +1223,7 @@ void ServerMqttSn::manage_client_connection(MqttConnection *p)
     }
   }
   */
+  pthread_mutex_unlock(&m_mosquittolock) ;
 }
 
 void ServerMqttSn::connection_watchdog(MqttConnection *p)
@@ -1209,6 +1261,8 @@ void ServerMqttSn::connection_watchdog(MqttConnection *p)
 bool ServerMqttSn::manage_connections()
 {
   MqttConnection *p = NULL ;
+  pthread_mutex_lock(&m_mosquittolock) ;
+  
   for(p = m_connection_head; p != NULL; p=p->next){
     switch(p->get_state()){
     case MqttConnection::State::connected:
@@ -1235,6 +1289,8 @@ bool ServerMqttSn::manage_connections()
     }
   }
 
+  pthread_mutex_unlock(&m_mosquittolock) ;
+
   return dispatch_queue() ;
 }
 
@@ -1245,9 +1301,13 @@ bool ServerMqttSn::advertise(uint16_t duration)
   buff[1] = duration >> 8 ; // Is this MSB first or LSB first?
   buff[2] = duration & 0x00FF;
 
-  if (addrwritemqtt(m_pDriver->get_broadcast(), MQTT_ADVERTISE, buff, 3))
+  pthread_mutex_lock(&m_mosquittolock) ;
+  if (addrwritemqtt(m_pDriver->get_broadcast(), MQTT_ADVERTISE, buff, 3)){
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return true ;
+  }
   
+  pthread_mutex_unlock(&m_mosquittolock) ;
   return false ;
 }
 
@@ -1255,7 +1315,11 @@ bool ServerMqttSn::register_topic(MqttConnection *con, MqttTopic *t)
 {
   uint8_t buff[PACKET_DRIVER_MAX_PAYLOAD] ;
   // Gateway call to client
-  if (!con->is_connected()) return false ; // not connected
+  pthread_mutex_lock(&m_mosquittolock) ;
+  if (!con->is_connected()){
+    pthread_mutex_unlock(&m_mosquittolock) ;
+    return false ; // not connected
+  }
   uint16_t mid = con->get_new_messageid();
   uint16_t topicid = t->get_id() ;
   buff[0] = topicid >> 8;
@@ -1270,13 +1334,16 @@ bool ServerMqttSn::register_topic(MqttConnection *con, MqttTopic *t)
       // If not registering all topics then watch for single topic
       con->set_activity(MqttConnection::Activity::registering) ;
     }
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return true ;
   }
+  pthread_mutex_unlock(&m_mosquittolock) ;
   return false ;
 }
 
 bool ServerMqttSn::ping(const char *szclientid)
 {
+  pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection(szclientid) ;
   if (!con) return false ; // cannot ping unknown client
 
@@ -1284,9 +1351,11 @@ bool ServerMqttSn::ping(const char *szclientid)
   // if it worked
   con->reset_ping() ;
 
-  if (writemqtt(con, MQTT_PINGREQ, NULL, 0))
+  if (writemqtt(con, MQTT_PINGREQ, NULL, 0)){
+    pthread_mutex_unlock(&m_mosquittolock) ;
     return true ;
-
+  }
+  pthread_mutex_unlock(&m_mosquittolock) ;
   return false ; // failed to send the ping
 }
 

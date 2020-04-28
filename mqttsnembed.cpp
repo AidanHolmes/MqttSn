@@ -89,6 +89,14 @@ bool MqttSnEmbed::initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *a
     return false;
   }
 
+  pthread_mutexattr_t attr ;
+  pthread_mutexattr_init(&attr);
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK) ;
+  if (pthread_mutex_init(&m_mqttlock, &attr) != 0){
+    EPRINT("MQTT mutex creation failed\n") ;
+    return false;
+  }
+  
   m_pDriver->set_callback_context(this) ;
   m_pDriver->set_data_received_callback(&MqttSnEmbed::m_fn_packet_received) ;
 
@@ -117,7 +125,7 @@ void MqttSnEmbed::queue_received(const uint8_t *addr,
 				uint8_t len)
 {
 #ifndef ARDUINO
-  pthread_mutex_lock(&m_rwlock) ;
+  pthread_mutex_lock(&m_mqttlock) ;
 #endif
   m_queue_head++ ;
   if (m_queue_head >= MQTT_MAX_QUEUE) m_queue_head = 0 ;
@@ -132,7 +140,7 @@ void MqttSnEmbed::queue_received(const uint8_t *addr,
   m_queue[m_queue_head].message_len = len ;
 
 #ifndef ARDUINO
-  pthread_mutex_unlock(&m_rwlock) ;
+  pthread_mutex_unlock(&m_mqttlock) ;
 #endif
 }
 
@@ -300,13 +308,13 @@ bool MqttSnEmbed::dispatch_queue()
       }
     }
 #ifndef ARDUINO
-    pthread_mutex_lock(&m_rwlock) ;
+    pthread_mutex_lock(&m_mqttlock) ;
 #endif
     if (!failed) m_queue[queue_ptr].set = false ;
     queue_ptr++;
     if (queue_ptr >= MQTT_MAX_QUEUE) queue_ptr = 0 ;
 #ifndef ARDUINO
-    pthread_mutex_unlock(&m_rwlock) ;
+    pthread_mutex_unlock(&m_mqttlock) ;
 #endif
     if (queue_ptr == m_queue_head) break;
   }
@@ -330,7 +338,6 @@ bool MqttSnEmbed::addrwritemqtt(const uint8_t *address,
 			       const uint8_t *buff,
 			       uint8_t len)
 {
-  pthread_mutex_lock(&m_rwlock) ;
   uint8_t send_buff[PACKET_DRIVER_MAX_PAYLOAD] ;
   // includes the length field and message type
   uint8_t payload_len = len+MQTT_HDR_LEN;
@@ -341,7 +348,6 @@ bool MqttSnEmbed::addrwritemqtt(const uint8_t *address,
     memcpy(send_buff+MQTT_HDR_LEN, buff, len) ;
 
   bool ret = m_pDriver->send(address, send_buff, payload_len) ;
-  pthread_mutex_unlock(&m_rwlock) ;
   return ret;
 }
 
