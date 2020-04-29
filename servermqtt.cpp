@@ -443,7 +443,8 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     }
   }else if(t->is_subscribed()){
     DPRINT("Topic %s has already been subscribed by the client\n", ptopic) ;
-    topicid = t->get_id();
+    if (t->is_wildcard()) topicid = 0;
+    else topicid = t->get_id();
     buff[1] = topicid >> 8 ;
     buff[2] = topicid & 0x00FF ;
     buff[5] = MQTT_RETURN_ACCEPTED;
@@ -544,7 +545,8 @@ void ServerMqttSn::received_regack(uint8_t *sender_address, uint8_t *data, uint8
   if (con->is_connected()){
     if (con->get_activity() == MqttConnection::Activity::registeringall){
       MqttTopic *t = NULL ;
-      if ((t=con->topics.get_next_topic())){
+      for(t=con->topics.get_next_topic(); t && (t->is_wildcard() || t->is_short_topic()); t=con->topics.get_next_topic());
+      if (t){
 	if (!register_topic(con, t)){
 	  DPRINT("Failed to register topic id %u, name %s\n",
 		 t->get_id(), t->get_topic()) ;
@@ -785,7 +787,9 @@ void ServerMqttSn::complete_client_connection(MqttConnection *p)
   p->set_state(MqttConnection::State::connected) ;
   p->topics.iterate_first_topic();
   MqttTopic *t = NULL ;
-  if ((t=p->topics.get_curr_topic())){
+  
+  for(t=p->topics.get_curr_topic(); t && (t->is_wildcard() || t->is_short_topic()); t=p->topics.get_next_topic());
+  if (t){
     // Topics are set on the connection
     p->set_activity(MqttConnection::Activity::registeringall) ;
     if (!register_topic(p, t)){
@@ -999,9 +1003,11 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
     return ;
   }
 
+  bool bfound = false ;
   gateway->lock_mosquitto() ; // Using topic iterators, lock section
   for(p = gateway->m_connection_head; p != NULL; p=p->next){
     if (p->is_connected()){
+      bfound = false ;
       p->topics.iterate_first_topic();
       t=p->topics.get_curr_topic();
       // Iterate the registered topics
@@ -1010,21 +1016,24 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
 	if (t->is_subscribed() && t->match(message->topic)){
 	  DPRINT("Found match against %s, QoS %u\n", t->get_topic(), t->get_qos());
 	  gateway->do_publish_topic(p, t, message->topic, t->is_short_topic()?FLAG_SHORT_TOPIC_NAME:FLAG_NORMAL_TOPIC_ID, message->payload, message->payloadlen, message->retain) ;
-	  continue ; //found a match, continue to next connection
+	  bfound = true ;
+	  break ; //found a match, continue to next connection
 	}
 	t=p->topics.get_next_topic();
       }
-      gateway->m_predefined_topics.iterate_first_topic() ;
-      t=gateway->m_predefined_topics.get_curr_topic();
-      // Iterate the predefined topics
-      while (t){
-	DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
-	if (t->is_subscribed() && t->match(message->topic)){
-	  DPRINT("Found match against %s, QoS %u\n", t->get_topic(), t->get_qos());
-	  gateway->do_publish_topic(p, t, message->topic, t->is_short_topic()?FLAG_SHORT_TOPIC_NAME:FLAG_DEFINED_TOPIC_ID, message->payload, message->payloadlen, message->retain) ;
-	  continue ; //found a match, continue to next connection
+      if (!bfound){
+	gateway->m_predefined_topics.iterate_first_topic() ;
+	t=gateway->m_predefined_topics.get_curr_topic();
+	// Iterate the predefined topics
+	while (t){
+	  DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
+	  if (t->is_subscribed() && t->match(message->topic)){
+	    DPRINT("Found match against %s, QoS %u\n", t->get_topic(), t->get_qos());
+	    gateway->do_publish_topic(p, t, message->topic, t->is_short_topic()?FLAG_SHORT_TOPIC_NAME:FLAG_DEFINED_TOPIC_ID, message->payload, message->payloadlen, message->retain) ;
+	    break ; //found a match, continue to next connection
+	  }
+	  t=p->topics.get_next_topic();
 	}
-	t=p->topics.get_next_topic();
       }
     }
   }
