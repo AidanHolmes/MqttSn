@@ -437,12 +437,12 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
   if (!(t=con->topics.get_topic(ptopic))){
     t = con->topics.add_topic(ptopic, messageid) ;
     if (!t){
-      EPRINT("Something went wrong getting the topic for client subscription\n");
+      EPRINT("Something went wrong adding the topic for client subscription\n");
       pthread_mutex_unlock(&m_mosquittolock) ;
       return ;
     }
-  }else{
-    DPRINT("Topic %s has already been subscribed to by the client\n", ptopic) ;
+  }else if(t->is_subscribed()){
+    DPRINT("Topic %s has already been subscribed by the client\n", ptopic) ;
     topicid = t->get_id();
     buff[1] = topicid >> 8 ;
     buff[2] = topicid & 0x00FF ;
@@ -454,6 +454,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
   DPRINT("Setting topic %s with QoS %u as subscribed topic\n", t->get_topic(), t->get_qos()) ;
   t->set_qos(qos) ;
   t->set_subscribed(true) ;
+  if (topic_type == FLAG_SHORT_TOPIC_NAME) t->set_short_topic(true);
   
   // Subscribe using QoS 1 to server.
   // TO DO - may need a config setting for all mosquitto calls 
@@ -472,9 +473,9 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     con->set_sub_entities(t->is_wildcard()?0:t->get_id(), messageid, qos) ;
     con->set_mosquitto_mid(mid) ;
   }
-  // If a topic is not a wilcard then send the registration to the client
+  // If a topic is not a wilcard or short topic then send the registration to the client
   // This should be fine to send after the SUBACK has gone.
-  if (!t->is_wildcard()){
+  if (!t->is_wildcard() && !t->is_short_topic()){
     register_topic(con, t) ; // Send topic 
   }
   pthread_mutex_unlock(&m_mosquittolock) ;
@@ -1008,7 +1009,8 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
 	DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
 	if (t->is_subscribed() && t->match(message->topic)){
 	  DPRINT("Found match against %s, QoS %u\n", t->get_topic(), t->get_qos());
-	  gateway->do_publish_topic(p, t, message->topic, FLAG_NORMAL_TOPIC_ID, message->payload, message->payloadlen, message->retain) ;
+	  gateway->do_publish_topic(p, t, message->topic, t->is_short_topic()?FLAG_SHORT_TOPIC_NAME:FLAG_NORMAL_TOPIC_ID, message->payload, message->payloadlen, message->retain) ;
+	  continue ; //found a match, continue to next connection
 	}
 	t=p->topics.get_next_topic();
       }
@@ -1019,7 +1021,8 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
 	DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
 	if (t->is_subscribed() && t->match(message->topic)){
 	  DPRINT("Found match against %s, QoS %u\n", t->get_topic(), t->get_qos());
-	  gateway->do_publish_topic(p, t, message->topic, FLAG_DEFINED_TOPIC_ID, message->payload, message->payloadlen, message->retain) ;
+	  gateway->do_publish_topic(p, t, message->topic, t->is_short_topic()?FLAG_SHORT_TOPIC_NAME:FLAG_DEFINED_TOPIC_ID, message->payload, message->payloadlen, message->retain) ;
+	  continue ; //found a match, continue to next connection
 	}
 	t=p->topics.get_next_topic();
       }
@@ -1056,8 +1059,14 @@ void ServerMqttSn::do_publish_topic(MqttConnection *con,
   DPRINT("Setting QoS for PUBLISH %u\n", qos) ;
   buff[0] = (retain?FLAG_RETAIN:0) | qos | topic_type;
   uint16_t topicid = t->get_id() ;
-  buff[1] = topicid >> 8;
-  buff[2] = topicid & 0x00FF ;
+  if (topic_type == FLAG_SHORT_TOPIC_NAME){
+    const char *szshort = t->get_topic() ;
+    buff[1] = szshort[0] ;
+    buff[2] = szshort[1] ;
+  }else{
+    buff[1] = topicid >> 8;
+    buff[2] = topicid & 0x00FF ;
+  }
   uint16_t mid = con->get_new_messageid() ;
   buff[3] = mid >> 8 ;
   buff[4] = mid & 0x00FF ;

@@ -265,6 +265,8 @@ void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
 
   // Search and get the topic from ID
   MqttTopic *t = NULL ;
+  const char *sztopic = NULL ;
+  char szshort[3] ;
   switch(topic_type){
   case FLAG_NORMAL_TOPIC_ID:
     DPRINT("PUBLISH: Searching normal topic IDs\n") ;
@@ -275,24 +277,32 @@ void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
     t = m_predefined_topics.get_topic(topicid);
     break;
   case FLAG_SHORT_TOPIC_NAME:
-    // Not implemented on server therefore not supported
+    szshort[0] = topicid >> 8;
+    szshort[1] = topicid & 0x00FF ;
+    szshort[2] = '\0';
+    sztopic = szshort ;
+    DPRINT("Client received short topic publish for %s\n", szshort) ;    
+    break;
   default:
     // Unknown or not implemented
     m_buff[4] = MQTT_RETURN_NOT_SUPPORTED;
     writemqtt(&m_client_connection, MQTT_PUBACK, m_buff, 5) ;
     return ;
   }
-  if (!(t)){
-    m_buff[4] = MQTT_RETURN_INVALID_TOPIC ;
-    writemqtt(&m_client_connection, MQTT_PUBACK, m_buff, 5) ;
-    return ;
+  if (topic_type != FLAG_SHORT_TOPIC_NAME){
+    if (t){
+      sztopic = t->get_topic() ;
+      DPRINT("Client received publish for topic %s, ID %u, Message ID %u\n", sztopic, topicid, messageid) ;
+    }else{
+      m_buff[4] = MQTT_RETURN_INVALID_TOPIC ;
+      writemqtt(&m_client_connection, MQTT_PUBACK, m_buff, 5) ;
+      return ;
+    }
   }
-
-  DPRINT("Client received publish for topic %s, ID %u, Message ID %u\n", t->get_topic(), topicid, messageid) ;
   
   // tell client of message
   // bool success, uint8_t return, const char* topic, uint8_t* payload, uint8_t payloadlen, uint8_t gwid
-  if (m_fnmessage) (*m_fnmessage)(true, MQTT_RETURN_ACCEPTED, t->get_topic(), payload, payload_len, m_client_connection.get_gwid());
+  if (m_fnmessage) (*m_fnmessage)(true, MQTT_RETURN_ACCEPTED, sztopic, payload, payload_len, m_client_connection.get_gwid());
   
   if (qos == FLAG_QOS0 || qos == FLAG_QOS1){
 

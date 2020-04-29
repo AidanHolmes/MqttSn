@@ -77,6 +77,7 @@ void MqttTopic::reset()
   m_iswildcard = false ;
   m_issubscribed = false ;
   m_topicqos = 0;
+  m_isshort = false ;
 }
 
 MqttTopicCollection::MqttTopicCollection()

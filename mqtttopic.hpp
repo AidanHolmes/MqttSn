@@ -57,6 +57,8 @@ public:
   void unlink(){if (!is_head())m_prev->m_next = m_next;}
   void link_head(MqttTopic *topic){if (m_prev)m_prev->m_next = topic;m_prev = topic;} // adds topic ahead
   void link_tail(MqttTopic *topic){if (m_next)m_next->m_prev = topic;m_next = topic;} // adds topic after
+  void set_short_topic(bool bset){m_isshort = bset;}
+  bool is_short_topic(){return m_isshort;}
 protected:
   MqttTopic *m_next ;
   MqttTopic *m_prev ;
@@ -70,6 +72,7 @@ protected:
   bool m_iswildcard;
   bool m_issubscribed;
   uint8_t m_topicqos ;
+  bool m_isshort;
 };
 
 class MqttTopicCollection{
