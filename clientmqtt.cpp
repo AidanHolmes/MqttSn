@@ -182,22 +182,24 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
   switch(data[5]){
   case MQTT_RETURN_ACCEPTED:
     DPRINT("SUBACK: {return code = Accepted}\n") ;
-    if ( (t=m_client_connection.topics.get_topic(topicid)) ){
-      // Topic exists already which it should be complete the registration
-      if (!t->is_complete()){
-	DPRINT("Topic %u already exists but not completed reg, completing registration now\n", topicid) ;
-	// Complete the topic anyway
-	t->set_message_id(messageid) ;
-	t->complete(topicid) ;
+    if (topicid > 0){ // Do nothing for wildcard topics
+      if ( (t=m_client_connection.topics.get_topic(topicid)) ){
+	// Topic exists already which it should be complete the registration
+	if (!t->is_complete()){
+	  DPRINT("Topic %u already exists but not completed reg, completing registration now\n", topicid) ;
+	  // Complete the topic anyway
+	  t->set_message_id(messageid) ;
+	  t->complete(topicid) ;
+	}
+	// Set subscription flag
+	t->set_subscribed(true) ;
+      }else if (! (t=m_client_connection.topics.complete_topic(messageid, topicid))){
+	// Topic completion may not work if the topicid was already registered or
+	// previously subscribed
+	EPRINT("SUBACK: Client cannot complete topic ID %u for mid %u\n", topicid, messageid) ;
+      }else{
+	DPRINT("SUBACK: Topic %s completed and registered with ID %u\n", t->get_topic(), t->get_id()) ;
       }
-      // Set subscription flag
-      t->set_subscribed(true) ;
-    }else if (! (t=m_client_connection.topics.complete_topic(messageid, topicid))){
-      // Topic completion may not work if the topicid was already registered or
-      // previously subscribed
-      EPRINT("SUBACK: Client cannot complete topic ID %u for mid %u\n", topicid, messageid) ;
-    }else{
-      DPRINT("SUBACK: Topic %s completed and registered with ID %u\n", t->get_topic(), t->get_id()) ;
     }
 
     break ;
@@ -841,6 +843,7 @@ uint16_t ClientMqttSn::register_topic(const char *topic)
     // Register the topic. Return value is zero if topic is new
     MqttTopic *t = m_client_connection.topics.reg_topic(topic, mid) ;
     if(t->get_id() > 0){
+      // Topic already exists
       if (t->is_complete()){
 	DPRINT("reg_topic returned an existing & complete topic ID %u\n", t->get_id()) ;
 #ifndef ARDUINO

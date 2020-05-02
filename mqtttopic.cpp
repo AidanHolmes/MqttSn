@@ -132,8 +132,10 @@ MqttTopic* MqttTopicCollection::reg_topic(const char *sztopic, uint16_t messagei
   }
 
   p = new MqttTopic(0, messageid, sztopic) ;
-  if (p)
+  if (p){
     insert_at->link_tail(p);
+    if (p->is_wildcard()) p->complete(0) ; // Wildcard topics don't need registration
+  }
   return p ;
 }
 
