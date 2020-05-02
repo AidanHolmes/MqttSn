@@ -31,8 +31,8 @@
 
 class MqttTopic{
 public:
-  MqttTopic(){reset();}
-  MqttTopic(uint16_t topic, uint16_t mid, const char *sztopic){reset();set_topic(topic, mid, sztopic);}
+  MqttTopic();
+  MqttTopic(uint16_t topic, uint16_t mid, const char *sztopic);
 
   bool match(const char *sztopic) ;
   void set_topic(uint16_t topic, uint16_t messageid, const char *sztopic) ;
@@ -49,7 +49,7 @@ public:
   MqttTopic *prev(){return m_prev;}
   bool is_complete(){return m_acknowledged;}
   bool is_wildcard(){return m_iswildcard;}
-  void complete(uint16_t tid){m_acknowledged = true ;m_topicid=tid;}
+  void complete(uint16_t tid);
   void set_predefined(bool predefined){m_predefined = predefined;}
   bool is_predefined(){return m_predefined;}
   void set_qos(uint8_t qos){m_topicqos = qos;}

@@ -27,6 +27,24 @@
 #define EPRINT(x,...)
 #endif
 
+MqttTopic::MqttTopic()
+{
+  reset();
+}
+
+MqttTopic::MqttTopic(uint16_t topic, uint16_t mid, const char *sztopic)
+{
+  reset();
+  set_topic(topic, mid, sztopic);
+}
+
+void MqttTopic::complete(uint16_t tid)
+{
+  m_acknowledged = true ;
+  if (!m_iswildcard) // Don't set an ID for wildcard topics
+    m_topicid=tid;
+}
+
 void MqttTopic::set_topic(uint16_t topic, uint16_t messageid, const char *sztopic)
 {
   m_topicid = topic ;
