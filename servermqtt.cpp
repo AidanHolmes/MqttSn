@@ -407,7 +407,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     // Topic is contained in remaining bytes of data
     memcpy(sztopic, data+3, len - 3);
     sztopic[len-3] = '\0' ;
-    // Register topic if new, otherwise returns existing topic
+    // Add topic if new, otherwise returns existing topic
     if (!(t=con->topics.get_topic(sztopic))){
       t = con->topics.add_topic(sztopic, messageid) ;
       if (!t){
@@ -426,7 +426,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
       EPRINT("Topic %u unknown for predefined client subscription\n", topicid) ;
       // Invalid topic, send client SUBACK with error
       buff[5] = MQTT_RETURN_INVALID_TOPIC ;
-      writemqtt(con, MQTT_SUBACK, buff, 5) ;
+      writemqtt(con, MQTT_SUBACK, buff, 6) ;
       pthread_mutex_unlock(&m_mosquittolock) ;
       return ;
     }
@@ -436,7 +436,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     // Shouldn't be possible to reach here
     EPRINT("Unknown topic type %u from client\n", topic_type) ;
     buff[5] = MQTT_RETURN_INVALID_TOPIC ;
-    writemqtt(con, MQTT_SUBACK, buff, 5) ;
+    writemqtt(con, MQTT_SUBACK, buff, 6) ;
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
@@ -447,7 +447,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     buff[1] = topicid >> 8 ;
     buff[2] = topicid & 0x00FF ;
     buff[5] = MQTT_RETURN_ACCEPTED;
-    writemqtt(con, MQTT_SUBACK, buff, 5) ;
+    writemqtt(con, MQTT_SUBACK, buff, 6) ;
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
