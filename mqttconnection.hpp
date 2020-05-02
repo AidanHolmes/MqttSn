@@ -101,6 +101,7 @@ public:
 			int qos, int len, uint8_t *payload, bool retain) ;
 
   void set_sub_entities(uint16_t topicid,
+			uint8_t topictype,
 			uint16_t messageid,
 			int qos) ;
   
@@ -112,7 +113,7 @@ public:
   int get_pub_payload_len();
   const uint8_t* get_pub_payload();
   bool get_pub_retain();
-  uint8_t get_pub_topic_type() ;
+  uint8_t get_pubsub_topic_type() ;
   int get_mosquitto_mid() ;
 
   void set_send_topics(bool b){m_sendtopics = b;}

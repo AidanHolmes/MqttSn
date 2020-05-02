@@ -97,6 +97,7 @@ public:
   // Returns the completed topic
   MqttTopic* complete_topic(uint16_t messageid, uint16_t topicid) ;
   bool del_topic(uint16_t id) ;
+  void del_topic(MqttTopic *t);
   bool del_topic_by_messageid(uint16_t messageid) ;
   void free_topics() ; // delete all topics and free mem
   void iterate_first_topic() ;

@@ -161,11 +161,19 @@ void ClientMqttSn::received_pubcomp(uint8_t *sender_address, uint8_t *data, uint
 
 void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
-  if (len < 5) return ;
+  if (len < 6) return ;
 
   uint16_t topicid = (data[1] << 8) | data[2] ; // Assuming MSB is first
   uint16_t messageid = (data[3] << 8) | data[4] ; // Assuming MSB is first
 
+#ifdef DEBUG
+  DPRINT("SUBACK raw: [") ;
+  for (int di=0; di < 6; di++)
+    DPRINT("%02X ", data[di]);
+  DPRINT("]\n") ;
+#endif
+
+  
   // Check connection status, are we connected, otherwise ignore
   if (!m_client_connection.is_connected()) return ;
   // Verify the source address is our connected gateway
@@ -184,7 +192,7 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
     DPRINT("SUBACK: {return code = Accepted}\n") ;
     if (topicid > 0){ // Do nothing for wildcard topics
       if ( (t=m_client_connection.topics.get_topic(topicid)) ){
-	// Topic exists already which it should be complete the registration
+	// Topic exists already - could have been previously registered.
 	if (!t->is_complete()){
 	  DPRINT("Topic %u already exists but not completed reg, completing registration now\n", topicid) ;
 	  // Complete the topic anyway
@@ -199,6 +207,8 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
 	EPRINT("SUBACK: Client cannot complete topic ID %u for mid %u\n", topicid, messageid) ;
       }else{
 	DPRINT("SUBACK: Topic %s completed and registered with ID %u\n", t->get_topic(), t->get_id()) ;
+	// Set subscription flag
+	t->set_subscribed(true) ;
       }
     }
 
@@ -912,7 +922,7 @@ bool ClientMqttSn::subscribe(uint8_t qos, const char *sztopic, bool bshorttopic)
     m_client_connection.set_activity(MqttConnection::Activity::subscribing);
     // Update cached version to set the DUP flag
     m_buff[0] |= FLAG_DUP;
-    m_client_connection.set_cache(MQTT_PUBLISH, m_buff, topic_len+3) ;
+    m_client_connection.set_cache(MQTT_SUBSCRIBE, m_buff, topic_len+3) ;
     return true ;
   }
   return false ;

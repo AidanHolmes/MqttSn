@@ -182,7 +182,7 @@ bool ServerMqttSn::server_publish(MqttConnection *con)
   const char *ptopic = NULL ;
   char szshort[3] ;
   MqttTopic *topic = NULL ;
-  switch(con->get_pub_topic_type()){
+  switch(con->get_pubsub_topic_type()){
   case FLAG_SHORT_TOPIC_NAME:
     szshort[0] = (char)(buff[0]);
     szshort[1] = (char)(buff[1]) ;
@@ -375,7 +375,6 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
   uint8_t topic_type = data[0] & (FLAG_DEFINED_TOPIC_ID | FLAG_SHORT_TOPIC_NAME);
   uint8_t buff[PACKET_DRIVER_MAX_PAYLOAD] ;
   char sztopic[PACKET_DRIVER_MAX_PAYLOAD - MQTT_SUBSCRIBE_HDR_LEN + 1];
-  const char *ptopic = NULL ;
   int mid = 0, ret = 0;
   uint16_t topicid = 0;
   MqttTopic *t = NULL ;
@@ -408,13 +407,23 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     // Topic is contained in remaining bytes of data
     memcpy(sztopic, data+3, len - 3);
     sztopic[len-3] = '\0' ;
-    ptopic = sztopic ;
+    // Register topic if new, otherwise returns existing topic
+    if (!(t=con->topics.get_topic(sztopic))){
+      t = con->topics.add_topic(sztopic, messageid) ;
+      if (!t){
+	EPRINT("Something went wrong adding the topic for client subscription\n");
+	pthread_mutex_unlock(&m_mosquittolock) ;
+	return ;
+      }
+    }
+    if (topic_type == FLAG_SHORT_TOPIC_NAME) t->set_short_topic(true);
+
     break;
   case FLAG_DEFINED_TOPIC_ID:
     topicid = (data[3] << 8) | data[4] ;
     t = m_predefined_topics.get_topic(topicid) ;
     if (!t){
-      EPRINT("Topic %u unknown for client subscription\n", topicid) ;
+      EPRINT("Topic %u unknown for predefined client subscription\n", topicid) ;
       // Invalid topic, send client SUBACK with error
       buff[5] = MQTT_RETURN_INVALID_TOPIC ;
       writemqtt(con, MQTT_SUBACK, buff, 5) ;
@@ -422,7 +431,6 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
       return ;
     }
     // Reference the predefined topic
-    ptopic = t->get_topic();
     break;
   default:
     // Shouldn't be possible to reach here
@@ -433,18 +441,8 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     return ;
   }
 
-  // Register topic if new, otherwise returns existing topic
-  if (!(t=con->topics.get_topic(ptopic))){
-    t = con->topics.add_topic(ptopic, messageid) ;
-    if (!t){
-      EPRINT("Something went wrong adding the topic for client subscription\n");
-      pthread_mutex_unlock(&m_mosquittolock) ;
-      return ;
-    }
-  }else if(t->is_subscribed()){
-    DPRINT("Topic %s has already been subscribed by the client\n", ptopic) ;
-    //if (t->is_wildcard()) topicid = 0;
-    //else topicid = t->get_id();
+  if(t->is_subscribed()){
+    DPRINT("Topic %s has already been subscribed by the client\n", t->get_topic()) ;
     topicid = t->get_id();
     buff[1] = topicid >> 8 ;
     buff[2] = topicid & 0x00FF ;
@@ -453,33 +451,39 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
+
   DPRINT("Setting topic %s with QoS %u as subscribed topic\n", t->get_topic(), t->get_qos()) ;
   t->set_qos(qos) ;
   t->set_subscribed(true) ;
-  if (topic_type == FLAG_SHORT_TOPIC_NAME) t->set_short_topic(true);
   
   // Subscribe using QoS 1 to server.
   // TO DO - may need a config setting for all mosquitto calls 
   ret = mosquitto_subscribe(m_pmosquitto,
 			    &mid,
-			    ptopic,
+			    t->get_topic(),
 			    1);
   // SUBACK handled through mosquitto call-back
   if (ret != MOSQ_ERR_SUCCESS){
     EPRINT("Mosquitto subscribe failed with code %d\n",ret);
-    buff[5] = MQTT_RETURN_CONGESTION;
-    writemqtt(con, MQTT_SUBACK, buff, 5) ;
+    t->set_subscribed(false) ; // remove subscription due to error
+    if (ret == MOSQ_ERR_INVAL){
+      buff[5] = MQTT_RETURN_INVALID_TOPIC;
+    }else{
+      buff[5] = MQTT_RETURN_CONGESTION;
+    }
+#ifdef DEBUG
+    DPRINT("Error from mosquitto. Sending following SUBACK: [") ;
+    for (int di=0; di < 6; di++)
+      DPRINT("%02X ", buff[di]);
+    DPRINT("]\n") ;
+#endif
+    writemqtt(con, MQTT_SUBACK, buff, 6) ;
   }else{
     DPRINT("Sending Mosquitto subscribe with mid %d\n", mid) ;
     // Don't set a topic ID if topic is a wildcard
     //    con->set_sub_entities(t->is_wildcard()?0:t->get_id(), messageid, qos) ;
-    con->set_sub_entities(t->get_id(), messageid, qos) ;
+    con->set_sub_entities(t->get_id(), topic_type, messageid, qos) ;
     con->set_mosquitto_mid(mid) ;
-  }
-  // If a topic is not a wilcard or short topic then send the registration to the client
-  // This should be fine to send after the SUBACK has gone.
-  if (!t->is_wildcard() && !t->is_short_topic()){
-    register_topic(con, t) ; // Send topic 
   }
   pthread_mutex_unlock(&m_mosquittolock) ;
   return ;
@@ -1124,8 +1128,8 @@ void ServerMqttSn::gateway_subscribe_callback(struct mosquitto *m,
   buff[5] = MQTT_RETURN_ACCEPTED ;
   if (gateway->writemqtt(con, MQTT_SUBACK, buff, 6)){
     DPRINT("Sending SUBACK with topic id %u and message id %u\n", topicid, messageid);
-    con->set_activity(MqttConnection::Activity::none);
   }
+
   gateway->unlock_mosquitto();
 }
 

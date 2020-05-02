@@ -111,16 +111,18 @@ void MqttConnection::set_pub_entities(uint16_t topicid,
 }
 
 void MqttConnection::set_sub_entities(uint16_t topicid,
+				      uint8_t topictype,
 				      uint16_t messageid,
 				      int qos)
 {
   m_tmptopicid = topicid;
+  m_tmptopictype = topictype ;
   m_tmpmessageid = messageid ;
   m_tmpqos = qos ;
 }
 
 
-uint8_t MqttConnection::get_pub_topic_type()
+uint8_t MqttConnection::get_pubsub_topic_type()
 {
   return m_tmptopictype ;
 }

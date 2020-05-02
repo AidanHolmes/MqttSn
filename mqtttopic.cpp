@@ -175,7 +175,7 @@ MqttTopic* MqttTopicCollection::create_topic(const char *sztopic, uint16_t topic
     for (p = topics; p; p = p->next()){
       if (p->get_id() == topicid){
 	// topic exists
-	DPRINT("Topic ID %u already exists for collection\n", topicid) ;
+	DPRINT("Topic %s, ID %u already exists for collection\n", p->get_topic(), topicid) ;
 	return NULL ;
       }
       insert_at = p ; // Save last valid topic pointer
@@ -255,6 +255,13 @@ bool MqttTopicCollection::del_topic(uint16_t id)
     }
   }
   return false ;
+}
+
+void MqttTopicCollection::del_topic(MqttTopic *t)
+{
+  if (!t) return ;
+  t->unlink() ;
+  delete t ;
 }
 
 void MqttTopicCollection::free_topics()
