@@ -33,7 +33,11 @@ void MqttTopic::set_topic(uint16_t topic, uint16_t messageid, const char *sztopi
   strncpy(m_sztopic, sztopic, PACKET_DRIVER_MAX_PAYLOAD - MQTT_REGISTER_HDR_LEN) ;
   m_iswildcard = false ;
   for (char *c = m_sztopic; *c ; c++){
-    if (*c == '#' || *c == '+') m_iswildcard = true ;
+    if (*c == '#' || *c == '+'){
+      m_iswildcard = true ;
+      m_topicid = 0; // Wildcard topics are not real topics. Set to zero
+      break ;
+    }
   }  
   m_messageid = messageid ;
   m_registered_at = TIMENOW ;
@@ -129,8 +133,8 @@ MqttTopic* MqttTopicCollection::complete_topic(uint16_t messageid, uint16_t topi
   return p ;
 }
 
-// Used for predefined topics although servers capture unique predefined topics in another
-// topic collection so these are redundant
+// Use create to set a topic id rather than have it assiged to next available ID using
+// add_topic
 MqttTopic* MqttTopicCollection::create_topic(const char *sztopic, uint16_t topicid, bool predefined)
 {
   MqttTopic *p = NULL, *insert_at = NULL ;
@@ -146,13 +150,16 @@ MqttTopic* MqttTopicCollection::create_topic(const char *sztopic, uint16_t topic
     return topics;
   }
 
-  for (p = topics; p; p = p->next()){
-    if (p->get_id() == topicid){
-      // topic exists
-      DPRINT("Topic ID %u already exists for collection\n", topicid) ;
-      return NULL ;
+  // Topic 0 is reserved for wildcard topic registrations. Many 0 topics can exist
+  if (topicid > 0){
+    for (p = topics; p; p = p->next()){
+      if (p->get_id() == topicid){
+	// topic exists
+	DPRINT("Topic ID %u already exists for collection\n", topicid) ;
+	return NULL ;
+      }
+      insert_at = p ; // Save last valid topic pointer
     }
-    insert_at = p ; // Save last valid topic pointer
   }
   // If collection was to run a long time with creation and deletion of topics then
   // the ID count will overflow! Overflows in 18 hours if requested every second

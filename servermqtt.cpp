@@ -443,8 +443,9 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     }
   }else if(t->is_subscribed()){
     DPRINT("Topic %s has already been subscribed by the client\n", ptopic) ;
-    if (t->is_wildcard()) topicid = 0;
-    else topicid = t->get_id();
+    //if (t->is_wildcard()) topicid = 0;
+    //else topicid = t->get_id();
+    topicid = t->get_id();
     buff[1] = topicid >> 8 ;
     buff[2] = topicid & 0x00FF ;
     buff[5] = MQTT_RETURN_ACCEPTED;
@@ -471,7 +472,8 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
   }else{
     DPRINT("Sending Mosquitto subscribe with mid %d\n", mid) ;
     // Don't set a topic ID if topic is a wildcard
-    con->set_sub_entities(t->is_wildcard()?0:t->get_id(), messageid, qos) ;
+    //    con->set_sub_entities(t->is_wildcard()?0:t->get_id(), messageid, qos) ;
+    con->set_sub_entities(t->get_id(), messageid, qos) ;
     con->set_mosquitto_mid(mid) ;
   }
   // If a topic is not a wilcard or short topic then send the registration to the client
@@ -1056,7 +1058,6 @@ void ServerMqttSn::do_publish_topic(MqttConnection *con,
       // doesn't exist as registered topic. Create new topic and register
       if (!(t = con->topics.add_topic(sztopic))) return;
       t->set_qos(qos) ;
-      //t->set_subscribed(true) ; // Don't subscribe to the message as unsub will not work as expected
       
       // TO DO - this is bad as it will not retry if no ACK received
       // Do better orchestration - possibly store the topic on the connection
