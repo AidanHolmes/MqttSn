@@ -40,7 +40,7 @@ Two examples files are created
 
 Both take parameters for the RF24 driver which gives some flexibility when wiring up. 
 
-### Client and server parameters
+### Client and server parameters (nRF24)
 Usage:  -c ce -i irq -a address -b address [-n clientname] [-o channel] [-s 250|1|2] [-x]
 
 Options:  
@@ -63,19 +63,19 @@ Server code is hardwired to mosquitto API to provide the gateway
 The code is still work in-progress, but hoping to be complete soon following a huge amount of work to decouple from existing drivers and making the code as portable as possible.
 
 ## To-do
-* Subscription to topics
 * Handling topics will wrap topic IDs when server reaches max 16 bit topic IDs. No attempt made to find unused topic IDs. No clean handling of this exception yet
 * Server is vulnerable to register and topic flooding where server memory is totally consumed by many or rogue clients. Control required to manage memory
 * Client is vulnerable to register and topic flooding from wildcard flags or rogue server sending enough topics to consume client memory. Requires control. 
 * Sleeping clients (some implementation, but not fully tested)
 * Forwarders
 * Encryption (all plain text communication, can be intercepted, replayed and spoofed)
+* QoS 2 implemented at protocol level, but not really setup to ensure once only message delivery
+* Failures to be sent to the client callbacks - timouts and other errors
 
 ## Deviations from 1.2 protocol
-* The code is liberal with the suggested field lengths where a driver only supports small data packets. Expect shorter available lengths for ClientId strings
-* Server will provide ReturnCode responses using existing response codes as errors. The official protocol is silent for most error cases
-* Clients will not attempt to respond to a gwinfo - this is done to prevent too much potential chatter
-* Client and server does not implement any random delays in responses as suggested
+* The code is liberal with the suggested field lengths where a driver only supports small data packets. Expect shorter available lengths for ClientId strings and topics
+* Clients will not attempt to respond to a gwinfo - this is done to prevent too much chatter over raido connections
+* Client and server does not implement any random delays in responses as suggested in the protocol
 * Congestion messages are not processed by the client code automatically, although the codes are exposed for user specific behaviour to be adjusted
 * Clients will try any gateway available, regardless of any recent connection issues to a previously connected gateway
 * Only clients ping gateways, the gateway will not check all clients with a ping, but will timout if a ping has not been received in enough time. This prevents conjestion

@@ -157,6 +157,11 @@ void ClientMqttSn::received_pubcomp(uint8_t *sender_address, uint8_t *data, uint
   // Reset the connection activity
   m_client_connection.set_activity(MqttConnection::Activity::none) ;
 
+  if (m_fnpublished) (*m_fnpublished)(true,
+				      MQTT_RETURN_ACCEPTED,
+				      m_client_connection.get_pubsub_topicid(),
+				      m_client_connection.get_pubsub_messageid(),
+				      m_client_connection.get_gwid());
 }
 
 void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8_t len)
