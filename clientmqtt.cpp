@@ -171,14 +171,6 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
   uint16_t topicid = (data[1] << 8) | data[2] ; // Assuming MSB is first
   uint16_t messageid = (data[3] << 8) | data[4] ; // Assuming MSB is first
 
-#ifdef DEBUG
-  DPRINT("SUBACK raw: [") ;
-  for (int di=0; di < 6; di++)
-    DPRINT("%02X ", data[di]);
-  DPRINT("]\n") ;
-#endif
-
-  
   // Check connection status, are we connected, otherwise ignore
   if (!m_client_connection.is_connected()) return ;
   // Verify the source address is our connected gateway
@@ -249,14 +241,14 @@ void ClientMqttSn::received_unsuback(uint8_t *sender_address, uint8_t *data, uin
 
 void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
-  if (len < 6) return ; // not long enough to be a publish
+  if (len < 5) return ; // not long enough to be a publish
   uint16_t topicid = (data[1] << 8) | data[2] ; // Assuming MSB is first
   uint16_t messageid = (data[3] << 8) | data[4] ; // Assuming MSB is first
   uint8_t qos = data[0] & FLAG_QOSN1 ;
   uint8_t topic_type = data[0] & (FLAG_DEFINED_TOPIC_ID | FLAG_SHORT_TOPIC_NAME);
   uint8_t payload[PACKET_DRIVER_MAX_PAYLOAD] ;
   int payload_len = len-5 ;
-  
+
   memcpy(payload, data+5, payload_len) ;
 
   m_buff[0] = data[1] ; // replicate topic id 
@@ -776,7 +768,28 @@ bool ClientMqttSn::manage_connections()
       if (m_client_connection.get_activity() != MqttConnection::Activity::none){
         // If connected client is doing anything then manage the connection
         if (!manage_pending_message(m_client_connection)){
-          m_client_connection.set_activity(MqttConnection::Activity::none) ;
+	  // What just failed
+	  switch(m_client_connection.get_activity()){
+	  case MqttConnection::Activity::registering:
+	    if (m_fnregister) (*m_fnregister)(false, MQTT_RETURN_MSG_FAILURE,
+					      0, m_client_connection.get_pubsub_messageid(),
+					      m_client_connection.get_gwid());
+	    break;
+	  case MqttConnection::Activity::publishing:
+	    if (m_fnpublished) (*m_fnpublished)(false, MQTT_RETURN_MSG_FAILURE,
+						0, m_client_connection.get_pubsub_messageid(),
+						m_client_connection.get_gwid());
+	    break;
+	  case MqttConnection::Activity::subscribing:
+	    if (m_fnsubscribed) (*m_fnsubscribed)(false, MQTT_RETURN_MSG_FAILURE,
+						  0, m_client_connection.get_pubsub_messageid(),
+						  m_client_connection.get_gwid());
+	    
+	    break;
+	  default:
+	    break;
+	  }
+	  m_client_connection.set_activity(MqttConnection::Activity::none) ;
         }
       }
     }
@@ -786,14 +799,14 @@ bool ClientMqttSn::manage_connections()
     if (!manage_pending_message(m_client_connection)){
       m_client_connection.set_state(MqttConnection::State::disconnected) ;
       // Failed to connect
-      if (m_fnconnected) (*m_fnconnected) (false, MQTT_RETURN_ACCEPTED, m_client_connection.get_gwid()) ;
+      if (m_fnconnected) (*m_fnconnected) (false, MQTT_RETURN_MSG_FAILURE, m_client_connection.get_gwid()) ;
     }
     break;
   case MqttConnection::State::disconnecting:
     if (!manage_pending_message(m_client_connection)){
       m_client_connection.set_state(MqttConnection::State::disconnected) ;
       // Disconnect timed out. Inform through callback that the connection should be closed anyway
-      if (m_fndisconnected) (*m_fndisconnected)(false, 0, m_client_connection.get_gwid()) ;
+      if (m_fndisconnected) (*m_fndisconnected)(false, MQTT_RETURN_MSG_FAILURE, m_client_connection.get_gwid()) ;
     }
     break ;
   case MqttConnection::State::disconnected:
@@ -802,6 +815,7 @@ bool ClientMqttSn::manage_connections()
       if (!manage_pending_message(m_client_connection)){
         // No search response, stop searching
         m_client_connection.set_activity(MqttConnection::Activity::none);
+	if (m_fngatewayinfo) (*m_fngatewayinfo)(false, 0) ;
       }
     }
       
@@ -885,6 +899,7 @@ uint16_t ClientMqttSn::register_topic(const char *topic)
     if (writemqtt(&m_client_connection, MQTT_REGISTER, m_buff, 4+len)){
       // Cache the message
       m_client_connection.set_activity(MqttConnection::Activity::registering) ;
+      m_client_connection.set_reg_entities(mid) ;
       return mid; //return the message id
     }
   }
@@ -924,7 +939,15 @@ bool ClientMqttSn::subscribe(uint8_t qos, const char *sztopic, bool bshorttopic)
   }
   
   if (writemqtt(&m_client_connection, MQTT_SUBSCRIBE, m_buff, topic_len+3)){
-    m_client_connection.set_activity(MqttConnection::Activity::subscribing);
+    if (qos > 0){
+      m_client_connection.set_activity(MqttConnection::Activity::subscribing);
+      m_client_connection.set_sub_entities(0,
+					   FLAG_SHORT_TOPIC_NAME,
+					   mid,
+					   m_buff[0]) ;
+    }
+  
+
     // Update cached version to set the DUP flag
     m_buff[0] |= FLAG_DUP;
     m_client_connection.set_cache(MQTT_SUBSCRIBE, m_buff, topic_len+3) ;
@@ -955,7 +978,13 @@ bool ClientMqttSn::subscribe(uint8_t qos, uint16_t topicid, uint8_t topictype)
   m_buff[4] = topicid & 0x00FF ;
   
   if (writemqtt(&m_client_connection, MQTT_SUBSCRIBE, m_buff, 5)){
-    if (qos > 0) m_client_connection.set_activity(MqttConnection::Activity::subscribing);
+    if (qos > 0){
+      m_client_connection.set_activity(MqttConnection::Activity::subscribing);
+      m_client_connection.set_sub_entities(topicid,
+					   topictype,
+					   mid,
+					   m_buff[0] & FLAG_QOSN1) ;
+    }
     // Update cached version to set the DUP flag
     m_buff[0] |= FLAG_DUP;
     m_client_connection.set_cache(MQTT_PUBLISH, m_buff, 5) ;
@@ -1088,7 +1117,11 @@ bool ClientMqttSn::publish(uint8_t qos, uint16_t topicid, uint16_t topictype, co
   memcpy(m_buff+5,payload, payload_len);
   
   if (writemqtt(&m_client_connection, MQTT_PUBLISH, m_buff, len)){
-    if (qos > 0) m_client_connection.set_activity(MqttConnection::Activity::publishing);
+    if (qos > 0){
+      m_client_connection.set_activity(MqttConnection::Activity::publishing);
+      m_client_connection.set_pub_entities(topicid, mid, topictype, m_buff[0] & FLAG_QOSN1,
+					   payload_len, payload, retain) ;
+    }
     // keep a copy for retries. Set the DUP flag for retries
     m_buff[0] |= FLAG_DUP;
     m_client_connection.set_cache(MQTT_PUBLISH, m_buff, len) ;

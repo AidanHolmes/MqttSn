@@ -1004,6 +1004,7 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
   MqttTopic *t = NULL;
   MqttConnection *p = NULL ;
 
+  DPRINT("Message is %d long. Packet has available bytes %d\n", message->payloadlen,(gateway->m_pDriver->get_payload_width()));
   if (message->payloadlen > (gateway->m_pDriver->get_payload_width() - MQTT_PUBLISH_HDR_LEN)){
     EPRINT("Payload of %u bytes is too long for publish\n", message->payloadlen);
     return ;
@@ -1087,6 +1088,7 @@ void ServerMqttSn::do_publish_topic(MqttConnection *con,
   uint8_t len = payloadlen + 5;
 
   memcpy(buff+5, payload, payloadlen) ;
+
   if (writemqtt(con, MQTT_PUBLISH, buff, len)){
     if (qos != FLAG_QOS0) con->set_activity(MqttConnection::Activity::publishing);
     else con->set_activity(MqttConnection::Activity::none);

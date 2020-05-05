@@ -93,12 +93,14 @@ public:
   // Read the cached message ID
   uint8_t get_cache_id(){return m_message_cache_id;}
 
-  // Set the temporary parameters for a publish. This caches
+  // Set the temporary parameters for a message. This caches
   // the entries.
+  void set_reg_entities(uint16_t messageid) ;
+  
   void set_pub_entities(uint16_t topicid,
 			uint16_t messageid,
 			uint8_t topictype,
-			int qos, int len, uint8_t *payload, bool retain) ;
+			int qos, int len, const uint8_t *payload, bool retain) ;
 
   void set_sub_entities(uint16_t topicid,
 			uint8_t topictype,

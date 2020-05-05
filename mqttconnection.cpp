@@ -95,11 +95,17 @@ void MqttConnection::set_cache(uint8_t messageid, const uint8_t *message, uint8_
   m_message_cache_id = messageid ;
 }
 
+void MqttConnection::set_reg_entities(uint16_t messageid)
+{
+  m_tmpmessageid = messageid ;
+}
+
+
 void MqttConnection::set_pub_entities(uint16_t topicid,
 				      uint16_t messageid,
 				      uint8_t topictype,
 				      int qos, int len,
-				      uint8_t *payload, bool retain)
+				      const uint8_t *payload, bool retain)
 {
   m_tmptopicid = topicid ;
   m_tmptopictype = topictype ;
