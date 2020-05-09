@@ -176,8 +176,9 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
   // Verify the source address is our connected gateway
   if (!m_client_connection.address_match(sender_address)) return ; 
 
+#ifndef ARDUINO
   pthread_mutex_lock(&m_mqttlock) ;
-
+#endif
   m_client_connection.update_activity() ; // Reset timers
   
   DPRINT("SUBACK: {topicid: %u, messageid: %u}\n", topicid, messageid) ;
@@ -224,7 +225,9 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
   }
 
   m_client_connection.set_activity(MqttConnection::Activity::none) ;
+#ifndef ARDUINO
   pthread_mutex_unlock(&m_mqttlock) ;
+#endif
   if (m_fnsubscribed) (*m_fnsubscribed)(data[5] == MQTT_RETURN_ACCEPTED,
 					data[5], topicid, messageid, m_client_connection.get_gwid());
 }
@@ -345,8 +348,10 @@ void ClientMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
   // Verify the source address is our connected gateway
   if (!m_client_connection.address_match(sender_address)) return ; 
 
+#ifndef ARDUINO
   pthread_mutex_lock(&m_mqttlock) ;
-
+#endif
+  
   m_client_connection.update_activity() ; // Reset timers
   
   DPRINT("REGISTER: {topicid: %u, messageid: %u, topic %s}\n", topicid, messageid, sztopic) ;
@@ -364,8 +369,9 @@ void ClientMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
   response[3] = data[3] ; // Echo back the messageid received
   response[4] = MQTT_RETURN_ACCEPTED ;
   writemqtt(&m_client_connection, MQTT_REGACK, response, 5) ;
+#ifndef ARDUINO
   pthread_mutex_unlock(&m_mqttlock) ;
-
+#endif
   // Call the client callback to inform of new topic
   // Implicitly acceped, returns zero for message ID as client didn't request
   if (m_fnregister) (*m_fnregister)(true, MQTT_RETURN_ACCEPTED, topicid, 0, m_client_connection.get_gwid());
