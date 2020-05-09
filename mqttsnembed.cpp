@@ -89,6 +89,7 @@ bool MqttSnEmbed::initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *a
     return false;
   }
 
+#ifndef ARDUINO
   pthread_mutexattr_t attr ;
   pthread_mutexattr_init(&attr);
   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK) ;
@@ -96,6 +97,7 @@ bool MqttSnEmbed::initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *a
     EPRINT("MQTT mutex creation failed\n") ;
     return false;
   }
+#endif
   
   m_pDriver->set_callback_context(this) ;
   m_pDriver->set_data_received_callback(&MqttSnEmbed::m_fn_packet_received) ;
