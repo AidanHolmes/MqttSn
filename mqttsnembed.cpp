@@ -146,24 +146,6 @@ void MqttSnEmbed::queue_received(const uint8_t *addr,
 #endif
 }
 
-bool MqttSnEmbed::manage_pending_message(MqttConnection &con)
-{
-  // Client handling of pending message
-  if(con.state_timeout(m_Tretry)){
-    if(con.state_timeout_count() >= m_Nretry){
-      // Exceeded number of allowed retries.
-      return false ;
-    }else{
-      // Retry
-      addrwritemqtt(con.get_address(),
-		    con.get_cache_id(),
-		    con.get_cache(),
-		    con.get_cache_len());
-    }
-  }
-  return true ;
-}
-
 bool MqttSnEmbed::dispatch_queue()
 {
   bool ret = true ;
@@ -327,12 +309,7 @@ bool MqttSnEmbed::writemqtt(MqttConnection *con,
 			   uint8_t messageid,
 			   const uint8_t *buff, uint8_t len)
 {
-  const uint8_t *address = con->get_address() ;
-  if (addrwritemqtt(address,messageid,buff,len)){
-    con->set_cache(messageid, buff, len) ;
-    return true ;
-  }
-  return false;
+  return addrwritemqtt(con->get_address(),messageid,buff,len);
 }
 
 bool MqttSnEmbed::addrwritemqtt(const uint8_t *address,

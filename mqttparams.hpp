@@ -23,11 +23,15 @@
 // Complier or client code can define the max queue and gateway
 // to tune memory usage
 #ifndef MQTT_MAX_QUEUE
-#define MQTT_MAX_QUEUE 50
+#define MQTT_MAX_QUEUE 20
 #endif
 #ifndef MQTT_MAX_GATEWAYS
 #define MQTT_MAX_GATEWAYS 5
 #endif
+#ifndef MQTT_MESSAGES_INFLIGHT
+#define MQTT_MESSAGES_INFLIGHT 5
+#endif
+
 #define MQTT_PROTOCOL 0x01
 
 #ifndef _BV

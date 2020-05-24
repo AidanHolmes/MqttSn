@@ -88,11 +88,11 @@ public:
   bool is_connected() ; // are we connected to any gateway?
   bool is_disconnected() ; // are we disconnected to any gateway?
 #ifndef ARDUINO
-  void set_willtopic(const wchar_t *topic, uint8_t qos) ;
-  void set_willmessage(const wchar_t *message) ;
+  bool set_willtopic(const wchar_t *topic, uint8_t qos, bool retain) ;
+  bool set_willmessage(const wchar_t *message) ;
 #endif
-  void set_willtopic(const char *topic, uint8_t qos) ;
-  void set_willmessage(const uint8_t *message, uint8_t len) ;
+  bool set_willtopic(const char *topic, uint8_t qos, bool retain);
+  bool set_willmessage(const uint8_t *message, uint8_t len) ;
   // TO DO: Protocol also allows update of will messages during connection to server
   
   // Disconnect. Optional sleep duration can be set. If zero then
@@ -120,22 +120,22 @@ public:
 
   // Publish for connected clients. Doesn't support -1 QoS
   // Sets a 2 letter short topic
-  // Returns false if cannot send message or client disconnected
-  bool publish(uint8_t qos,
-	       const char* sztopic,
-	       const uint8_t *payload,
-	       uint8_t payload_len,
-	       bool retain);
+  // Returns message ID on success or zeroon failure
+  uint16_t publish(uint8_t qos,
+		   const char* sztopic,
+		   const uint8_t *payload,
+		   uint8_t payload_len,
+		   bool retain);
   
   // Publish for connected clients. Doesn't support -1 QoS
   // Supports topic ids on the connection or permanent on server
-  // Returns false if message cannot be sent or client not connected
-  bool publish(uint8_t qos,
-	       uint16_t topicid,
-	       uint16_t topictype,
-	       const uint8_t *payload,
-	       uint8_t payload_len,
-	       bool retain);
+  // Returns message ID on success or zero on failure
+  uint16_t publish(uint8_t qos,
+		   uint16_t topicid,
+		   uint16_t topictype,
+		   const uint8_t *payload,
+		   uint8_t payload_len,
+		   bool retain);
   
   // Ping for use by a client to check a gateway is alive
   // Returns false if gateway is unknown or transmit failed (with ACK)
@@ -150,14 +150,16 @@ public:
 
   // Subscribe to a topic with the server using a topic name.
   // Set bshorttopic to true if using 2 character topic identifiers
-  bool subscribe(uint8_t qos, const char *sztopic, bool bshorttopic = false) ;
+  // Returns message ID on success or zero on failure
+  uint16_t subscribe(uint8_t qos, const char *sztopic, bool bshorttopic = false) ;
   
   // Subscribe to a topic with the server using a topic ID. Supports
   // short name or predefined ID.
-  // Function applies default topic type of defined topic ID for typical use
-  bool subscribe(uint8_t qos,
-		 uint16_t topicid,
-		 uint8_t topictype = FLAG_DEFINED_TOPIC_ID) ;
+  // Function applies default topic type of defined topic ID for typical use.
+  // Returns message ID on success or zero on failure
+  uint16_t subscribe(uint8_t qos,
+		     uint16_t topicid,
+		     uint8_t topictype = FLAG_DEFINED_TOPIC_ID) ;
   
   // Handles connections to gateways or to clients. Dispatches queued messages
   // Will return false if a queued message cannot be dispatched.
@@ -217,11 +219,11 @@ protected:
 
   // Connection attributes for a client
   MqttConnection m_client_connection ;
-  char m_willtopic[PACKET_DRIVER_MAX_PAYLOAD - MQTT_WILLTOPIC_HDR_LEN +1] ;
-  uint8_t m_willmessage[PACKET_DRIVER_MAX_PAYLOAD - MQTT_WILLMSG_HDR_LEN] ;
-  size_t m_willtopicsize ;
-  size_t m_willmessagesize ;
-  uint8_t m_willtopicqos ;
+  //char m_willtopic[PACKET_DRIVER_MAX_PAYLOAD - MQTT_WILLTOPIC_HDR_LEN +1] ;
+  //uint8_t m_willmessage[PACKET_DRIVER_MAX_PAYLOAD - MQTT_WILLMSG_HDR_LEN] ;
+  //size_t m_willtopicsize ;
+  //size_t m_willmessagesize ;
+  //uint8_t m_willtopicqos ;
   uint16_t m_sleep_duration ;
 
   // General payload buffer for memory reuse across calls

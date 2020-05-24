@@ -100,10 +100,10 @@ void connect(char params[][30], int count)
   if (count >= 2){
     // Will set
     will = true ;
-    pradio->set_willtopic(params[0], 3);
+    pradio->set_willtopic(params[0], 3, false);
     pradio->set_willmessage((uint8_t *)params[1], strlen(params[1])) ;
   }else{
-    pradio->set_willtopic((char *)NULL,0) ;
+    pradio->set_willtopic((char *)NULL,0, false) ;
     pradio->set_willmessage(NULL,0) ;
   }
 

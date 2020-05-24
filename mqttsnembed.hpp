@@ -206,8 +206,6 @@ protected:
 		      const uint8_t *data,
 		      uint8_t len) ;
 
-  bool manage_pending_message(MqttConnection &con);
-
   // Creates header and body. Writes to address
   // Throws MqttIOErr or MqttOutOfRange exceptions
   // Returns false if connection failed max retries

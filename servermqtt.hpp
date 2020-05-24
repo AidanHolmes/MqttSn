@@ -144,14 +144,16 @@ protected:
   MqttConnection* new_connection();
   // Get the connection for a specified mosquitto connection.
   // Returns NULL if the message id cannot be found.
-  MqttConnection* search_mosquitto_id(int mid) ;
+  MqttConnection* search_mosquitto_id(int mid, MqttMessage **pm) ;
   // Removes a connection from the connection cache.
   void delete_connection(const char *szclientid);
   
   // Gateway function to write PUBLISH messages to the MQTT server
   // Requires a connection to extract the registered topic
   // Returns false if the MQTT server cannot be processed
-  bool server_publish(MqttConnection *con);
+  bool server_publish(MqttConnection *con, uint16_t messageid, uint16_t topicid,
+		      uint8_t topic_type, uint8_t *payload, uint8_t len,
+		      uint8_t qos, bool retain);
 
   // Gateway function to send a WILL to the
   // MQTT server
@@ -166,7 +168,6 @@ protected:
   bool m_mosquitto_initialised ;
   uint8_t m_gwid;
   bool m_broker_connected ;
-  bool m_register_all ;
   
   pthread_mutex_t m_mosquittolock ;
 };

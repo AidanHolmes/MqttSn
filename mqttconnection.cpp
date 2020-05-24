@@ -18,6 +18,146 @@
 #include "mqttconnection.hpp"
 #include <stdio.h>
 
+void MqttMessage::reset()
+{
+  m_active = false ;
+  m_message_cache_typeid = 0;
+  m_message_cache_len = 0;
+  m_messageid = 0;
+  m_topicid = 0;
+  m_topictype = 0;
+  m_mosmid = 0;
+  m_state = Activity::none ;
+  m_lasttry = 0 ;
+  m_attempts = 0 ;
+  m_sent = false ;
+  m_oneshot = false ;
+  m_message_set = false ;
+}
+void MqttMessage::sending()
+{
+  // A one shot message will not attempt a retry
+  if (m_oneshot){
+    m_active =false ;
+  }else{
+    m_sent = true;
+    m_lasttry=TIMENOW;
+    m_attempts=1;
+    // Set DUP flag for repeat messages
+    if (m_attempts == 1 &&
+	(m_message_cache_typeid == MQTT_SUBSCRIBE ||
+	 m_message_cache_typeid == MQTT_PUBLISH)){
+      if (m_message_cache_len > 0) m_message_cache[0] |= FLAG_DUP ;
+    }
+  }
+}
+
+void MqttMessage::set_message(uint8_t messagetypeid, const uint8_t *message, uint8_t len)
+{
+  m_message_set = true ;
+  m_message_cache_typeid = messagetypeid ;
+  if(message){
+    memcpy(m_message_cache, message, len) ;
+  }else{
+    len = 0;
+  }
+  m_message_cache_len = len ;
+}
+
+bool MqttMessage::has_expired(time_t timeout)
+{
+  if((timeout+m_lasttry) < TIMENOW){
+    m_attempts++;
+    m_lasttry = TIMENOW;
+    return true;
+  }
+  
+  return false ;
+}
+
+
+MqttMessageCollection::MqttMessageCollection()
+{
+  m_lastmessageid = 0;
+  m_queuehead = 0;
+  m_queuetail = 0;
+}
+
+uint16_t MqttMessageCollection::get_new_messageid()
+{
+  if(m_lastmessageid == 0xFFFF)
+    m_lastmessageid=0;
+  return ++m_lastmessageid;
+}
+
+MqttMessage* MqttMessageCollection::add_message(MqttMessage::Activity state)
+{
+  uint16_t messpos = m_queuetail ;
+  do{
+    if (!m_messages[messpos].is_active()){
+      // This message is inactive
+      m_messages[messpos].reset() ;
+      m_messages[messpos].set_active() ;
+      m_messages[messpos].set_message_id(get_new_messageid()) ;
+      m_messages[messpos].set_activity(state);
+      m_queuetail = messpos ;
+      return &(m_messages[messpos]);
+    }
+    messpos++ ;
+    if (messpos == MQTT_MESSAGES_INFLIGHT) messpos = 0;
+  }while(messpos != m_queuetail);
+
+  return NULL ;
+}
+
+MqttMessage* MqttMessageCollection::get_message(uint16_t messageid)
+{
+  // Search for the message ID. This will also return inactive messages that match
+  for(int i=0; i < MQTT_MESSAGES_INFLIGHT; i++){
+    if (m_messages[i].get_message_id() == messageid){
+      return &(m_messages[i]) ;
+    }
+  }
+  return NULL ; // No match
+}
+
+MqttMessage* MqttMessageCollection::get_mos_message(int messageid)
+{
+  // Search for the message ID. This will also return inactive messages that match
+  for(int i=0; i < MQTT_MESSAGES_INFLIGHT; i++){
+    if (m_messages[i].get_mosquitto_mid() == messageid){
+      return &(m_messages[i]) ;
+    }
+  }
+  return NULL ; // No match
+  
+}
+
+MqttMessage* MqttMessageCollection::get_active_message()
+{
+  uint16_t mpos = m_queuehead ;
+  do{
+    if (m_messages[mpos].is_active()){
+      m_queuehead = mpos ; // update head
+      return &(m_messages[mpos]) ;
+    }
+    mpos++ ;
+    if (mpos == MQTT_MESSAGES_INFLIGHT) mpos = 0;
+  }while (mpos != m_queuehead) ;
+  m_queuehead = 0;
+  m_queuetail = 0 ;
+  return NULL ; // No active messages
+}
+
+void MqttMessageCollection::clear_queue()
+{
+  for(int i=0; i < MQTT_MESSAGES_INFLIGHT; i++){
+    m_messages[i].reset();
+  }
+}
+
+
+
 MqttConnection::MqttConnection(){
   next = NULL ;
   prev = NULL ;
@@ -27,15 +167,9 @@ MqttConnection::MqttConnection(){
   sleep_duration = 0 ;
   asleep_from = 0 ;
   m_last_ping =0;
-  m_messageid = 0;
   m_address_len = 0 ;
   m_state = State::disconnected ;
-  m_activity = Activity::none ;
   m_szclientid[0] = '\0' ;
-  m_attempts = 0;
-  m_lasttry = 0 ;
-  m_message_cache_len = 0 ;
-  m_message_cache_id = 0 ;
   m_willtopicretain = false ;
   m_willtopicqos = 0 ;
   m_willtopicsize = 0 ;
@@ -54,18 +188,6 @@ void MqttConnection::update_activity()
 bool MqttConnection::send_another_ping()
 {
   return ((m_last_ping + (duration)) < TIMENOW) ;
-}
-
-bool MqttConnection::state_timeout(uint16_t timeout){
-  if((timeout+m_lasttry) < TIMENOW){m_attempts++; m_lasttry = TIMENOW; return true;}
-  else return false ;
-}
-
-uint16_t MqttConnection::get_new_messageid()
-{
-  if(m_messageid == 0xFFFF)
-    m_messageid=0;
-  return ++m_messageid;
 }
 
 bool MqttConnection::lost_contact()
@@ -89,91 +211,8 @@ void MqttConnection::set_address(const uint8_t *addr, uint8_t len)
   m_address_len = len ;
 }
 
-void MqttConnection::set_cache(uint8_t messageid, const uint8_t *message, uint8_t len){
-  memcpy(m_message_cache, message, len) ;
-  m_message_cache_len = len ;
-  m_message_cache_id = messageid ;
-}
 
-void MqttConnection::set_reg_entities(uint16_t messageid)
-{
-  m_tmpmessageid = messageid ;
-}
-
-
-void MqttConnection::set_pub_entities(uint16_t topicid,
-				      uint16_t messageid,
-				      uint8_t topictype,
-				      int qos, int len,
-				      const uint8_t *payload, bool retain)
-{
-  m_tmptopicid = topicid ;
-  m_tmptopictype = topictype ;
-  m_tmpmessageid = messageid ;
-  m_tmpqos = qos ;
-  m_tmpmessagelen = len ;
-  memcpy(m_tmppubmessage, payload, len) ;
-  m_tmpretain = retain ;
-}
-
-void MqttConnection::set_sub_entities(uint16_t topicid,
-				      uint8_t topictype,
-				      uint16_t messageid,
-				      int qos)
-{
-  m_tmptopicid = topicid;
-  m_tmptopictype = topictype ;
-  m_tmpmessageid = messageid ;
-  m_tmpqos = qos ;
-}
-
-
-uint8_t MqttConnection::get_pubsub_topic_type()
-{
-  return m_tmptopictype ;
-}
-
-uint16_t MqttConnection::get_pubsub_topicid()
-{
-  return m_tmptopicid ;
-}
-
-uint16_t MqttConnection::get_pubsub_messageid()
-{
-  return m_tmpmessageid ;
-}
-
-int MqttConnection::get_pubsub_qos()
-{
-  return m_tmpqos ;
-}
-
-int MqttConnection::get_pub_payload_len()
-{
-  return m_tmpmessagelen ;
-}
-
-const uint8_t* MqttConnection::get_pub_payload()
-{
-  return m_tmppubmessage ;
-}
-
-bool MqttConnection::get_pub_retain()
-{
-  return m_tmpretain ;
-}
-
-void MqttConnection::set_mosquitto_mid(int mid)
-{
-  m_tmpmosmid = mid ;
-}
-
-int MqttConnection::get_mosquitto_mid()
-{
-  return m_tmpmosmid ;
-}
-
-bool MqttConnection::set_will_topic(char *topic, uint8_t qos, bool retain)
+bool MqttConnection::set_will_topic(const char *topic, uint8_t qos, bool retain)
 {
   size_t len = 0;
   if (!topic || (len=strlen(topic)) == 0){
@@ -193,7 +232,7 @@ bool MqttConnection::set_will_topic(char *topic, uint8_t qos, bool retain)
   return true ;
 }
 
-bool MqttConnection::set_will_message(uint8_t *message, uint8_t len)
+bool MqttConnection::set_will_message(const uint8_t *message, uint8_t len)
 {
   if (!message || len == 0){
     m_willmessagesize = 0;
