@@ -400,7 +400,6 @@ void ClientMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
   MqttTopic *t = NULL;
   if (!(t=m_client_connection.topics.create_topic(sztopic, topicid))){
     EPRINT("Server error, cannot create topic %s, possible memory error or topic exists\n", sztopic) ;
-    return ; // Stop
   }
   
   uint8_t response[5] ;
@@ -669,6 +668,7 @@ void ClientMqttSn::received_connack(uint8_t *sender_address, uint8_t *data, uint
   case MQTT_RETURN_ACCEPTED:
     DPRINT("CONNACK: {return code = Accepted}\n") ;
     m_client_connection.set_state(MqttConnection::State::connected);
+    m_client_connection.messages.clear_queue() ;
     bsuccess = true ;
     break ;
   case MQTT_RETURN_CONGESTION:
