@@ -142,7 +142,7 @@ void ClientMqttSn::received_pubrel(uint8_t *sender_address, uint8_t *data, uint8
 
   uint16_t messageid = (data[0] << 8) | data[1] ;
 
-  MqttMessage *m = m_client_connection.messages.get_message(messageid) ;
+  MqttMessage *m = m_client_connection.messages.get_message(messageid,true) ;
   if (!m){
     EPRINT("PUBREL: received unknown message ID %u\n", messageid) ;
     return ;
@@ -368,7 +368,7 @@ void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
   }
 
   m->set_topic_id(topicid) ;
-  m->set_message_id(messageid) ;
+  m->set_message_id(messageid,true) ;
   m->set_topic_type(topic_type) ;
   m->set_qos(qos) ;
   m->set_message(MQTT_PUBREC, m_buff+2, 2) ;

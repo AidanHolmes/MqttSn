@@ -24,6 +24,7 @@ void MqttMessage::reset()
   m_message_cache_typeid = 0;
   m_message_cache_len = 0;
   m_messageid = 0;
+  m_external_message = false ;
   m_topicid = 0;
   m_topictype = 0;
   m_mosmid = 0;
@@ -87,7 +88,8 @@ uint16_t MqttMessageCollection::get_new_messageid()
 {
   if(m_lastmessageid == 0xFFFF)
     m_lastmessageid=0;
-  return ++m_lastmessageid;
+  m_lastmessageid++ ;
+  return m_lastmessageid;
 }
 
 MqttMessage* MqttMessageCollection::add_message(MqttMessage::Activity state)
@@ -110,11 +112,11 @@ MqttMessage* MqttMessageCollection::add_message(MqttMessage::Activity state)
   return NULL ;
 }
 
-MqttMessage* MqttMessageCollection::get_message(uint16_t messageid)
+MqttMessage* MqttMessageCollection::get_message(uint16_t messageid, bool externalid)
 {
   // Search for the message ID. This will also return inactive messages that match
   for(int i=0; i < MQTT_MESSAGES_INFLIGHT; i++){
-    if (m_messages[i].get_message_id() == messageid){
+    if (m_messages[i].get_message_id() == messageid && m_messages[i].is_external() == externalid){
       return &(m_messages[i]) ;
     }
   }
@@ -154,6 +156,8 @@ void MqttMessageCollection::clear_queue()
   for(int i=0; i < MQTT_MESSAGES_INFLIGHT; i++){
     m_messages[i].reset();
   }
+  m_queuehead = 0;
+  m_queuetail = 0;
 }
 
 

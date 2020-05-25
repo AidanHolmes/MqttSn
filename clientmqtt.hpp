@@ -141,8 +141,9 @@ public:
   // Returns false if gateway is unknown or transmit failed (with ACK)
   bool ping(uint8_t gw);
 
-  // Register a topic with the server. Returns the topic id to use
-  // when publishing messages. Returns 0 if the register fails.
+  // Register a topic with the server.
+  // Returns the message ID used for communication. Topic ID available in callback 
+  // Returns 0 if the register fails.
   #ifndef ARDUINO
   uint16_t register_topic(const wchar_t *topic) ;
   #endif

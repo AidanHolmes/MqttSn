@@ -57,8 +57,9 @@ public:
 
   bool has_content(){return m_message_set;}
 
-  void set_message_id(uint16_t messageid){m_messageid = messageid;}
+  void set_message_id(uint16_t messageid, bool isexternal=false){m_messageid = messageid;m_external_message = isexternal;}
   uint16_t get_message_id(){return m_messageid;}
+  bool is_external(){return m_external_message;}
 
   void set_qos(uint8_t qos){m_qos = qos ;}
   uint8_t get_qos(){return m_qos ;}
@@ -93,7 +94,8 @@ protected:
   uint8_t m_message_cache[PACKET_DRIVER_MAX_PAYLOAD] ;
   uint8_t m_message_cache_len ;
   
-  uint16_t m_messageid ;  
+  uint16_t m_messageid ;
+  bool m_external_message ;
   uint16_t m_topicid ;
   uint8_t m_topictype ;
   uint8_t m_qos ;
@@ -117,7 +119,7 @@ public:
   MqttMessageCollection() ;
   // Create an empty message. Will allocate a messageid, reset the message and set a state
   MqttMessage* add_message(MqttMessage::Activity state);
-  MqttMessage* get_message(uint16_t messageid) ;
+  MqttMessage* get_message(uint16_t messageid, bool externalid=false);
   MqttMessage* get_mos_message(int messageid) ;
   MqttMessage* get_active_message() ;
   void clear_queue() ;

@@ -230,7 +230,7 @@ bool ServerMqttSn::server_publish(MqttConnection *con, uint16_t messageid, uint1
   m->set_mosquitto_mid(mid) ;
   m->set_qos(qos) ;
   m->set_topic_id(topicid) ;
-  m->set_message_id(messageid) ;
+  m->set_message_id(messageid, true) ;
   m->set_topic_type(topic_type) ;
   pthread_mutex_unlock(&m_mosquittolock) ;
   
@@ -250,7 +250,7 @@ void ServerMqttSn::received_pubrel(uint8_t *sender_address, uint8_t *data, uint8
     pthread_mutex_unlock(&m_mosquittolock) ;
     return;
   }
-  MqttMessage *m = con->messages.get_message(messageid) ;
+  MqttMessage *m = con->messages.get_message(messageid,true) ;
   if (!m){
     EPRINT("PUBREL received unknown message ID %u\n", messageid) ;
     pthread_mutex_unlock(&m_mosquittolock) ;
@@ -484,7 +484,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     }else{
       m->set_topic_id(t->get_id()) ;
       m->set_topic_type(topic_type) ;
-      m->set_message_id(messageid) ;
+      m->set_message_id(messageid,true) ;
       m->set_qos(qos) ;
       m->set_mosquitto_mid(mid) ;
       m->one_shot(true);
@@ -568,22 +568,22 @@ void ServerMqttSn::received_regack(uint8_t *sender_address, uint8_t *data, uint8
     return ;
   }
   m->set_inactive() ; // Message complete
+
+  // TO DO: Return code is ignored, do something sensible with it
   
-  if (con->is_connected()){
-    if (con->get_send_topics()){ // Still need to send topics to client
-      // Iterate to next topic to send
-      MqttTopic *t = NULL ;
-      for(t=con->topics.get_next_topic(); t && (t->is_wildcard() || t->is_short_topic()); t=con->topics.get_next_topic());
-      if (t){
-	if (!register_topic(con, t)){
-	  DPRINT("Failed to register topic id %u, name %s\n",
-		 t->get_id(), t->get_topic()) ;
-	}
-      }else{
-	// Finished all topics
-	// Stop the connection trying to send again
-	con->set_send_topics(false);
+  if (con->is_connected() && con->get_send_topics()){
+    // Iterate to next topic to send
+    MqttTopic *t = NULL ;
+    for(t=con->topics.get_next_topic(); t && (t->is_wildcard() || t->is_short_topic()); t=con->topics.get_next_topic());
+    if (t){
+      if (!register_topic(con, t)){
+	DPRINT("Failed to register topic id %u, name %s\n",
+	       t->get_id(), t->get_topic()) ;
       }
+    }else{
+      // Finished all topics
+      // Stop the connection trying to send again
+      con->set_send_topics(false);
     }
   }
   pthread_mutex_unlock(&m_mosquittolock) ;
@@ -1300,12 +1300,14 @@ bool ServerMqttSn::manage_connections()
 		m->set_inactive();
 	      }else{
 		// Write the message again
-		DPRINT("Resending message %u\n", m->get_message_id());
+		DPRINT("Resending MQTT message %u, Message ID %u, length %u\n",
+		       m->get_message_type(),
+		       m->get_message_id(),
+		       m->get_message_len());
 		writemqtt(con,
 			  m->get_message_type(),
 			  m->get_message(),
 			  m->get_message_len()) ;
-		//m->sending() ;
 	      }
 	    }
 	  }
