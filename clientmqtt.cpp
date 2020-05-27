@@ -864,7 +864,6 @@ bool ClientMqttSn::manage_connections()
     if(!m->is_sending()){
       // Send message to server for first attempt
       // Check the activity as searching for gateway requires a broadcast
-      DPRINT("Sending message %u\n", m->get_message_id());
       if (m->get_activity() == MqttMessage::Activity::searching){
 	DPRINT("Sending a search broadcast...\n");
 	if (addrwritemqtt(m_pDriver->get_broadcast(), MQTT_SEARCHGW,
@@ -872,7 +871,7 @@ bool ClientMqttSn::manage_connections()
 	  m->sending() ; // Flag as sending 
 	}
       }else{
-	DPRINT("Sending MQTT message %u, Message ID %u, length %u\n",
+	DPRINT("Sending MQTT message %02X, Message ID %u, length %u\n",
 	       m->get_message_type(),
 	       m->get_message_id(),
 	       m->get_message_len());
@@ -888,12 +887,16 @@ bool ClientMqttSn::manage_connections()
 	if (m->has_failed(m_Nretry)){
 	  // Connection has failed retry attempts
 	  // Set this message to inactive and process the next message
+	  DPRINT("Failed to send message %02X, Message ID %u, length %u\n",
+		 m->get_message_type(),
+		 m->get_message_id(),
+		 m->get_message_len());
 	  m->set_inactive();
 	  message_expired = true ;
 	
 	}else{
 	  // Write the message again
-	  DPRINT("resending message %u\n", m->get_message_id());
+	  DPRINT("Resending message %u\n", m->get_message_id());
 	  if (m->get_activity() == MqttMessage::Activity::searching){
 	    addrwritemqtt(m_pDriver->get_broadcast(), MQTT_SEARCHGW,
 			  m->get_message(), m->get_message_len());

@@ -186,7 +186,7 @@ bool ServerMqttSn::server_publish(MqttConnection *con, uint16_t messageid, uint1
     break;
   case FLAG_NORMAL_TOPIC_ID:
     topic = con->topics.get_topic(topicid) ;
-    if (!topic){
+    if (!topic || topicid == 0){
       EPRINT("Client topic id %d unknown to gateway\n", topicid) ;
       buff[4] = MQTT_RETURN_INVALID_TOPIC ;
       writemqtt(con, MQTT_PUBACK, buff, 5) ;
@@ -221,6 +221,7 @@ bool ServerMqttSn::server_publish(MqttConnection *con, uint16_t messageid, uint1
     m->set_inactive() ;
     
     EPRINT("Mosquitto publish failed with code %d\n", ret);
+    EPRINT("Mosquitto params - Topic: %s, len %u, retain %s\n", ptopic, len, retain?"yes":"no");
     buff[4] = MQTT_RETURN_CONGESTION ;
     writemqtt(con, MQTT_PUBACK, buff, 5) ;
     pthread_mutex_unlock(&m_mosquittolock) ;
@@ -715,6 +716,7 @@ MqttConnection* ServerMqttSn::new_connection()
       
     }
     p->prev = prev ;
+    prev->next = p ;
   }
 
   return p ;
@@ -1039,7 +1041,7 @@ void ServerMqttSn::gateway_message_callback(struct mosquitto *m,
       t=p->topics.get_curr_topic();
       // Iterate the registered topics
       while (t){
-	DPRINT("Looking for topic %s against ID %u, topic name %s\n", message->topic, t->get_id(), t->get_topic()) ;
+	DPRINT("Looking for topic %s against ID %u, topic name %s [subscribed %s, matches %s]\n", message->topic, t->get_id(), t->get_topic(), t->is_subscribed()?"yes":"no", t->match(message->topic)?"yes":"no") ;
 	if (t->is_subscribed() && t->match(message->topic)){
 	  DPRINT("Found match against %s, QoS %u\n", t->get_topic(), t->get_qos());
 	  gateway->do_publish_topic(p, t, message->topic, t->is_short_topic()?FLAG_SHORT_TOPIC_NAME:FLAG_NORMAL_TOPIC_ID, message->payload, message->payloadlen, message->retain) ;
@@ -1276,10 +1278,11 @@ bool ServerMqttSn::manage_connections()
 	  // There's an active message to process
 	  if (!m->is_sending()){
 	    // Write the message to client
-	    DPRINT("Sending MQTT message %u, Message ID %u, length %u\n",
+	    DPRINT("Sending MQTT message %u, Message ID %u, length %u to client %s\n",
 		   m->get_message_type(),
 		   m->get_message_id(),
-		   m->get_message_len());
+		   m->get_message_len(),
+		   con->get_client_id());
 	    if(writemqtt(con,
 			 m->get_message_type(),
 			 m->get_message(), m->get_message_len())){
