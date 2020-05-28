@@ -84,7 +84,42 @@
 #define MQTT_PINGRESP 0x17
 #define MQTT_WILLTOPICRESP 0x1B
 #define MQTT_WILLMSGRESP 0x1D
-
+#ifdef DEBUG
+const char* mqtt_code_str(uint8_t code)
+{
+  switch(code){
+  case MQTT_ADVERTISE: return "MQTT_ADVERTISE" ;
+  case MQTT_GWINFO: return "MQTT_GWINFO";
+  case MQTT_CONNECT: return "MQTT_CONNECT" ;
+  case MQTT_WILLTOPICREQ: return "MQTT_WILLTOPICREQ" ;
+  case MQTT_REGISTER:return "MQTT_REGISTER";
+  case MQTT_PUBLISH: return "MQTT_PUBLISH";
+  case MQTT_PUBCOMP: return "MQTT_PUBCOMP" ;
+  case MQTT_PUBREL: return "MQTT_PUBREL";
+  case MQTT_SUBSCRIBE: return "MQTT_SUBSCRIBE" ;
+  case MQTT_UNSUBSCRIBE: return "MQTT_UNSUBSCRIBE" ;
+  case MQTT_PINGREQ: return "MQTT_PINGREQ" ;
+  case MQTT_DISCONNECT: return "MQTT_DISCONNECT" ;
+  case MQTT_WILLTOPICUPD: return "MQTT_WILLTOPICUPD";
+  case MQTT_WILLMSGUPD: return "MQTT_WILLMSGUPD";
+  case MQTT_SEARCHGW: return "MQTT_SEARCHGW" ;
+  case MQTT_CONNACK: return "MQTT_CONNACK" ;
+  case MQTT_WILLTOPIC: return "MQTT_WILLTOPIC";
+  case MQTT_WILLMSG: return "MQTT_WILLMSG" ;
+  case MQTT_REGACK: return "MQTT_REGACK";
+  case MQTT_PUBACK: return "MQTT_PUBACK" ;
+  case MQTT_PUBREC: return "MQTT_PUBREC" ;
+  case MQTT_SUBACK: return "MQTT_SUBACK" ;
+  case MQTT_UNSUBACK: return "MQTT_UNSUBACK" ;
+  case MQTT_PINGRESP: return "MQTT_PINGRESP" ;
+  case MQTT_WILLTOPICRESP: return "MQTT_WILLTOPICRESP" ;
+  case MQTT_WILLMSGRESP: return "MQTT_WILLMSGRESP" ;
+  default:
+    break;
+  }
+  return "UNKNOWN" ;
+}
+#endif
 // MQTT size macros - driver agnostic
 #define MQTT_HDR_LEN 2
 #define MQTT_HDR_FLAGS_LEN 1

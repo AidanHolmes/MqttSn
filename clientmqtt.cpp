@@ -30,12 +30,6 @@ ClientMqttSn::ClientMqttSn()
 {
   strcpy(m_szclient_id, "CL") ;  
 
-  //m_willmessage[0] = '\0' ;
-  // m_willmessagesize = 0 ;
-  //m_willtopic[0] = '\0' ;
-  //m_willtopicsize = 0 ;
-  //m_willtopicqos = 0;
-
   m_sleep_duration = 0 ;
   
   m_fnconnected = NULL ;
@@ -76,20 +70,19 @@ void ClientMqttSn::received_puback(uint8_t *sender_address, uint8_t *data, uint8
     
   switch(returncode){
   case MQTT_RETURN_ACCEPTED:
-    DPRINT("PUBACK: {return code = Accepted}\n") ;
     bsuccess = true ;
     break ;
   case MQTT_RETURN_CONGESTION:
-    DPRINT("PUBACK: {return code = Congestion}\n") ;
+    EPRINT("PUBACK: {return code = Congestion}\n") ;
     break ;
   case MQTT_RETURN_INVALID_TOPIC:
-    DPRINT("PUBACK: {return code = Invalid Topic}\n") ;
+    EPRINT("PUBACK: {return code = Invalid Topic}\n") ;
     break ;
   case MQTT_RETURN_NOT_SUPPORTED:
-    DPRINT("PUBACK: {return code = Not Supported}\n") ;
+    EPRINT("PUBACK: {return code = Not Supported}\n") ;
     break ;
   default:
-    DPRINT("PUBACK: {return code = %u}\n", returncode) ;
+    EPRINT("PUBACK: {unexpected return code = %u}\n", returncode) ;
   }    
   if (m_fnpublished) (*m_fnpublished)(bsuccess, returncode, topicid, messageid, m_client_connection.get_gwid());
 
@@ -109,6 +102,7 @@ void ClientMqttSn::received_pubrec(uint8_t *sender_address, uint8_t *data, uint8
   m_client_connection.update_activity() ;
 
   uint16_t messageid = (data[0] << 8) | data[1] ; // Assuming MSB is first
+  DPRINT("PUBREC: {messageid = %u}\n", messageid) ;
 
   MqttMessage *m = m_client_connection.messages.get_message(messageid) ;
   if (!m){
@@ -120,8 +114,6 @@ void ClientMqttSn::received_pubrec(uint8_t *sender_address, uint8_t *data, uint8
     EPRINT("PUBREC: Incorrect message for none QoS message\n");
     return ;
   }
-
-  DPRINT("PUBREC {messageid = %u}\n", messageid) ;
 
   m->reset_message() ; // clear old message and replace with new
   m->set_message(MQTT_PUBREL, data, 2) ;
@@ -141,6 +133,7 @@ void ClientMqttSn::received_pubrel(uint8_t *sender_address, uint8_t *data, uint8
   m_client_connection.update_activity() ;
 
   uint16_t messageid = (data[0] << 8) | data[1] ;
+  DPRINT("PUBREL: {messageid = %u}\n", messageid) ;
 
   MqttMessage *m = m_client_connection.messages.get_message(messageid,true) ;
   if (!m){
@@ -155,8 +148,6 @@ void ClientMqttSn::received_pubrel(uint8_t *sender_address, uint8_t *data, uint8
 
   // This is the final comms for a QoS 2 message. Close message
   m->set_inactive() ;
-
-  DPRINT("PUBREL: {messageid = %u}\n", messageid) ;
 
   writemqtt(&m_client_connection, MQTT_PUBCOMP, data, 2);
 }
@@ -227,12 +218,10 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
 
   switch(data[5]){
   case MQTT_RETURN_ACCEPTED:
-    DPRINT("SUBACK: {return code = Accepted}\n") ;
     if (topicid > 0){ // Do nothing for wildcard topics
       if ( (t=m_client_connection.topics.get_topic(topicid)) ){
 	// Topic exists already - could have been previously registered.
 	if (!t->is_complete()){
-	  DPRINT("Topic %u already exists but not completed reg, completing registration now\n", topicid) ;
 	  // Complete the topic anyway
 	  t->set_message_id(messageid) ;
 	  t->complete(topicid) ;
@@ -244,7 +233,6 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
 	// previously subscribed
 	EPRINT("SUBACK: Client cannot complete topic ID %u for mid %u\n", topicid, messageid) ;
       }else{
-	DPRINT("SUBACK: Topic %s completed and registered with ID %u\n", t->get_topic(), t->get_id()) ;
 	// Set subscription flag
 	t->set_subscribed(true) ;
       }
@@ -252,16 +240,17 @@ void ClientMqttSn::received_suback(uint8_t *sender_address, uint8_t *data, uint8
 
     break ;
   case MQTT_RETURN_CONGESTION:
-    DPRINT("SUBACK: {return code = Congestion}\n") ;
+    EPRINT("SUBACK: {return code = Congestion}\n") ;
     break ;
   case MQTT_RETURN_INVALID_TOPIC:
-    DPRINT("SUBACK: {return code = Invalid Topic}\n") ;
+    EPRINT("SUBACK: {return code = Invalid Topic}\n") ;
     break ;
   case MQTT_RETURN_NOT_SUPPORTED:
-    DPRINT("SUBACK: {return code = Not Supported}\n") ;
+    EPRINT("SUBACK: {return code = Not Supported}\n") ;
     break ;
   default:
-    DPRINT("SUBACK: {return code = %u}\n", data[5]) ;
+    EPRINT("SUBACK: {return code = %u}\n", data[5]) ;
+    break;
   }
 
 #ifndef ARDUINO
@@ -313,11 +302,9 @@ void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
   char szshort[3] ;
   switch(topic_type){
   case FLAG_NORMAL_TOPIC_ID:
-    DPRINT("PUBLISH: Searching normal topic IDs\n") ;
     t=m_client_connection.topics.get_topic(topicid);
     break ;
   case FLAG_DEFINED_TOPIC_ID:
-    DPRINT("PUBLISH: Searching predefined topic IDs\n") ;
     t = m_predefined_topics.get_topic(topicid);
     break;
   case FLAG_SHORT_TOPIC_NAME:
@@ -325,7 +312,6 @@ void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
     szshort[1] = topicid & 0x00FF ;
     szshort[2] = '\0';
     sztopic = szshort ;
-    DPRINT("Client received short topic publish for %s\n", szshort) ;    
     break;
   default:
     // Unknown or not implemented
@@ -336,7 +322,6 @@ void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
   if (topic_type != FLAG_SHORT_TOPIC_NAME){
     if (t){
       sztopic = t->get_topic() ;
-      DPRINT("Client received publish for topic %s, ID %u, Message ID %u\n", sztopic, topicid, messageid) ;
     }else{
       m_buff[4] = MQTT_RETURN_INVALID_TOPIC ;
       writemqtt(&m_client_connection, MQTT_PUBACK, m_buff, 5) ;
@@ -361,7 +346,7 @@ void ClientMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
   // QoS 2 messages require a PUBREC
   MqttMessage *m = m_client_connection.messages.add_message(MqttMessage::Activity::publishing);
   if (!m){
-    DPRINT("Client cannot process publish due to full message queue\n");
+    EPRINT("PUBLISH: Cannot process publish due to full message queue\n");
     m_buff[4] = MQTT_RETURN_CONGESTION ;
     writemqtt(&m_client_connection, MQTT_PUBACK, m_buff, 5) ;
     return ;
@@ -399,7 +384,7 @@ void ClientMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
 
   MqttTopic *t = NULL;
   if (!(t=m_client_connection.topics.create_topic(sztopic, topicid))){
-    EPRINT("Server error, cannot create topic %s, possible memory error or topic exists\n", sztopic) ;
+    EPRINT("Server error, cannot create topic %s, possible memory error or topic already exists\n", sztopic) ;
   }
   
   uint8_t response[5] ;
@@ -446,27 +431,26 @@ void ClientMqttSn::received_regack(uint8_t *sender_address, uint8_t *data, uint8
 
   switch(returncode){
   case MQTT_RETURN_ACCEPTED:
-    DPRINT("REGACK: {return code = Accepted}\n") ;
     if (!m_client_connection.topics.complete_topic(messageid, topicid)){
-      DPRINT("Cannot complete topic %u with messageid %u\n", topicid, messageid) ;
+      EPRINT("Cannot complete topic %u with messageid %u\n", topicid, messageid) ;
     }else{
       bsuccess = true ;
     }
     break ;
   case MQTT_RETURN_CONGESTION:
-    DPRINT("REGACK: {return code = Congestion}\n") ;
+    EPRINT("REGACK: {return code = Congestion}\n") ;
     m_client_connection.topics.del_topic_by_messageid(messageid) ;
     break ;
   case MQTT_RETURN_INVALID_TOPIC:
-    DPRINT("REGACK: {return code = Invalid Topic}\n") ;
+    EPRINT("REGACK: {return code = Invalid Topic}\n") ;
     m_client_connection.topics.del_topic_by_messageid(messageid) ;
     break ;
   case MQTT_RETURN_NOT_SUPPORTED:
-    DPRINT("REGACK: {return code = Not Supported}\n") ;
+    EPRINT("REGACK: {return code = Not Supported}\n") ;
     m_client_connection.topics.del_topic_by_messageid(messageid) ;
     break ;
   default:
-    DPRINT("REGACK: {return code = %u}\n", returncode) ;
+    EPRINT("REGACK: {return code = %u}\n", returncode) ;
     m_client_connection.topics.del_topic_by_messageid(messageid) ;
   }
   if (m_fnregister) (*m_fnregister)(bsuccess, returncode, topicid, messageid, m_client_connection.get_gwid());
@@ -474,7 +458,6 @@ void ClientMqttSn::received_regack(uint8_t *sender_address, uint8_t *data, uint8
 
 void ClientMqttSn::received_pingresp(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
-  DPRINT("PINGRESP\n") ;
 #ifndef ARDUINO
   pthread_mutex_lock(&m_mqttlock) ;
 #endif
@@ -495,17 +478,6 @@ void ClientMqttSn::received_pingresp(uint8_t *sender_address, uint8_t *data, uin
 void ClientMqttSn::received_pingreq(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
   // regardless of client or gateway just send the ACK
-  #ifdef DEBUG
-  if (len > 0){ //contains a client id
-    char szclientid[PACKET_DRIVER_MAX_PAYLOAD - MQTT_CONNECT_HDR_LEN +1];
-    memcpy(szclientid, data, len);
-    szclientid[len] = '\0' ;
-    DPRINT("PINGREQ: {clientid = %s}\n", szclientid) ;
-  }else{
-    DPRINT("PINGREQ\n") ;
-  }
-  #endif
- 
   addrwritemqtt(sender_address, MQTT_PINGRESP, NULL, 0) ; 
 }
 
@@ -523,7 +495,7 @@ void ClientMqttSn::received_advertised(uint8_t *sender_address, uint8_t *data, u
     // New gateway
     bool ret = add_gateway(sender_address, data[0], duration);
     if (!ret){
-      DPRINT("Cannot add gateway %u\n", data[0]) ;
+      EPRINT("ADVERTISED: Cannot add gateway %u\n", data[0]) ;
     }else{
       if (m_fngatewayinfo) (*m_fngatewayinfo)(true, data[0]) ;
     }
@@ -593,9 +565,11 @@ bool ClientMqttSn::del_gateway(uint8_t gwid)
 
 void ClientMqttSn::received_gwinfo(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
+#ifdef DEBUG
   DPRINT("GWINFO: {gw = %u, address = ", data[0]) ;
-  for (uint8_t j=0; j < len - 1; j++) DPRINT("%X", data[j+1]) ;
+  for (uint8_t j=0; j < len - 1; j++) DPRINT("%02X", data[j+1]) ;
   DPRINT("}\n") ;
+#endif
   
   bool gw_updated = false  ;
 #ifndef ARDUINO
@@ -654,38 +628,37 @@ void ClientMqttSn::received_connack(uint8_t *sender_address, uint8_t *data, uint
 
   MqttMessage *m = m_client_connection.messages.get_active_message() ;
   if (!m){
-    EPRINT("No active connection message available, invalid connection state\n") ;
+    EPRINT("CONNACK: No active connection message available, invalid connection state\n") ;
     m_client_connection.set_state(MqttConnection::State::disconnected) ;
     return ;
   }
   m->set_inactive() ; // Complete message
   
   if (m->get_activity() == MqttMessage::Activity::willtopic){
-    EPRINT("Connection complete, but will topic or message not processed\n") ;
+    EPRINT("CONNACK: Connection complete, but will topic or message not processed\n") ;
   }
 
   switch(data[0]){
   case MQTT_RETURN_ACCEPTED:
-    DPRINT("CONNACK: {return code = Accepted}\n") ;
     m_client_connection.set_state(MqttConnection::State::connected);
     m_client_connection.messages.clear_queue() ;
     bsuccess = true ;
     break ;
   case MQTT_RETURN_CONGESTION:
-    DPRINT("CONNACK: {return code = Congestion}\n") ;
+    EPRINT("CONNACK: {return code = Congestion}\n") ;
     m_client_connection.set_state(MqttConnection::State::disconnected); // Cannot connect
     break ;
   case MQTT_RETURN_INVALID_TOPIC:
-    DPRINT("CONNACK: {return code = Invalid Topic}\n") ;
+    EPRINT("CONNACK: {return code = Invalid Topic}\n") ;
     // Can this still count as a connection?
     m_client_connection.set_state(MqttConnection::State::disconnected); // Don't allow?
     break ;
   case MQTT_RETURN_NOT_SUPPORTED:
-    DPRINT("CONNACK: {return code = Not Supported}\n") ;
+    EPRINT("CONNACK: {return code = Not Supported}\n") ;
     m_client_connection.set_state(MqttConnection::State::disconnected); // Cannot connect
     break ;
   default:
-    DPRINT("CONNACK: {return code = %u}\n", data[0]) ;
+    EPRINT("CONNACK: {return code = %u}\n", data[0]) ;
     // ? Are we connected ?
     m_client_connection.set_state(MqttConnection::State::disconnected); // Cannot connect
   }
@@ -705,7 +678,7 @@ void ClientMqttSn::received_willtopicreq(uint8_t *sender_address, uint8_t *data,
   m_client_connection.update_activity() ;
     
   // Only clients need to respond to this
-  DPRINT("WILLTOPICREQ\n") ;
+  DPRINT("WILLTOPICREQ: {}\n") ;
   if (m_client_connection.get_state() != MqttConnection::State::connecting) return ; // Unexpected
   MqttMessage *m = m_client_connection.messages.get_active_message() ;
   if (!m){
@@ -746,7 +719,7 @@ void ClientMqttSn::received_willmsgreq(uint8_t *sender_address, uint8_t *data, u
   m_client_connection.update_activity() ;
 
   // Only clients need to respond to this
-  DPRINT("WILLMSGREQ\n") ;
+  DPRINT("WILLMSGREQ: {}\n") ;
   if (m_client_connection.get_state() != MqttConnection::State::connecting) return ; // Unexpected
   MqttMessage *m = m_client_connection.messages.get_active_message() ;
   if (!m){
@@ -771,7 +744,7 @@ void ClientMqttSn::received_willmsgreq(uint8_t *sender_address, uint8_t *data, u
 
 void ClientMqttSn::received_disconnect(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
-  DPRINT("DISCONNECT\n") ;
+  DPRINT("DISCONNECT: {}\n") ;
   // Disconnect request from server to client
   // probably due to an error
   MqttMessage *m = m_client_connection.messages.get_active_message() ;
@@ -806,14 +779,7 @@ const char* ClientMqttSn::get_client_id()
 
 void ClientMqttSn::initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *address)
 {
-  // Reset will attributes
-  /*
-  m_willtopic[0] = '\0' ;
-  m_willtopicsize = 0 ;
-  m_willtopicqos = 0 ;
-  m_willmessage[0] = '\0' ;
-  m_willmessagesize = 0;
-  */
+  // N/A
   MqttSnEmbed::initialise(address_len, broadcast, address) ;
 }
 
@@ -823,7 +789,7 @@ bool ClientMqttSn::manage_gw_connection()
   // ping to maintain connection?
   
   if (m_client_connection.lost_contact()){
-    DPRINT("Client lost connection to gateway %u\n", m_client_connection.get_gwid()) ;
+    DPRINT("MANAGE CONNECTION: Client lost connection to gateway %u\n", m_client_connection.get_gwid()) ;
     // Close connection. Take down connection
     m_client_connection.set_state(MqttConnection::State::disconnected) ;
     m_client_connection.messages.clear_queue();
@@ -841,9 +807,8 @@ bool ClientMqttSn::manage_gw_connection()
   }else{
     // Another ping due?      
     if (m_client_connection.send_another_ping()){
-      DPRINT("Sending a ping to %u\n", m_client_connection.get_gwid()) ;
       bool r = ping(m_client_connection.get_gwid()) ;
-      if (!r) DPRINT("Ping to gw failed\n") ;
+      if (!r) EPRINT("MANAGE CONNECTION: Ping failed\n") ;
     }
   }
   return true ;
@@ -865,14 +830,13 @@ bool ClientMqttSn::manage_connections()
       // Send message to server for first attempt
       // Check the activity as searching for gateway requires a broadcast
       if (m->get_activity() == MqttMessage::Activity::searching){
-	DPRINT("Sending a search broadcast...\n");
 	if (addrwritemqtt(m_pDriver->get_broadcast(), MQTT_SEARCHGW,
 			  m->get_message(), m->get_message_len())){
 	  m->sending() ; // Flag as sending 
 	}
       }else{
-	DPRINT("Sending MQTT message %02X, Message ID %u, length %u\n",
-	       m->get_message_type(),
+	DPRINT("MANAGE CONNECTION: Sending MQTT message %s, Message ID %u, length %u\n",
+	       mqtt_code_str(m->get_message_type()),
 	       m->get_message_id(),
 	       m->get_message_len());
 	if (writemqtt(&m_client_connection,
@@ -887,8 +851,8 @@ bool ClientMqttSn::manage_connections()
 	if (m->has_failed(m_Nretry)){
 	  // Connection has failed retry attempts
 	  // Set this message to inactive and process the next message
-	  DPRINT("Failed to send message %02X, Message ID %u, length %u\n",
-		 m->get_message_type(),
+	  DPRINT("MANAGE CONNECTION: Message failed to deliver %s, Message ID %u, length %u\n",
+		 mqtt_code_str(m->get_message_type()),
 		 m->get_message_id(),
 		 m->get_message_len());
 	  m->set_inactive();
@@ -896,7 +860,8 @@ bool ClientMqttSn::manage_connections()
 	
 	}else{
 	  // Write the message again
-	  DPRINT("Resending message %u\n", m->get_message_id());
+	  DPRINT("MANAGE CONNECTION: Resending message %s, Message ID %u\n",
+		 mqtt_code_str(m->get_message_type()), m->get_message_id());
 	  if (m->get_activity() == MqttMessage::Activity::searching){
 	    addrwritemqtt(m_pDriver->get_broadcast(), MQTT_SEARCHGW,
 			  m->get_message(), m->get_message_len());
@@ -995,7 +960,10 @@ uint16_t ClientMqttSn::register_topic(const char *topic)
     if (len > m_pDriver->get_payload_width() - MQTT_REGISTER_HDR_LEN) return 0;
 
     MqttMessage *m = m_client_connection.messages.add_message(MqttMessage::Activity::registering);
-    if (!m) return 0 ;
+    if (!m){
+      EPRINT("Register_Topic: Cannot creae a new message\n") ;
+      return 0 ;
+    }
 
 #ifndef ARDUINO
     pthread_mutex_lock(&m_mqttlock) ;
@@ -1008,17 +976,16 @@ uint16_t ClientMqttSn::register_topic(const char *topic)
       // Topic already exists
       if (t->is_complete()){
 	m->reset() ;
-	DPRINT("reg_topic returned an existing & complete topic ID %u\n", t->get_id()) ;
 #ifndef ARDUINO
 	pthread_mutex_unlock(&m_mqttlock) ;
 #endif
 	return 0 ; // already exists
       }else{
-	DPRINT("Topic ID %u already exists but is incomplete, attempting with new mid %u\n", t->get_id(), mid) ;
 	t->set_message_id(mid) ; // Set new message id to complete
       }
     }else{
-      DPRINT("reg_topic has registered a new topic %u\n", mid) ;
+      // New topic registered
+
     }
 
 #ifndef ARDUINO
@@ -1046,7 +1013,7 @@ uint16_t ClientMqttSn::subscribe(uint8_t qos, const char *sztopic, bool bshortto
   if (qos > 2) return 0 ; // Invalid QoS
   uint8_t topic_len = strlen(sztopic) ;
   if (topic_len > m_pDriver->get_payload_width() - MQTT_SUBSCRIBE_HDR_LEN){
-    EPRINT("Topic %s is too long to fit in subscription message\n", sztopic) ;
+    EPRINT("Send subscribe: Topic %s is too long to fit in subscription message\n", sztopic) ;
     return 0 ;
   }
   if (bshorttopic){
@@ -1057,6 +1024,7 @@ uint16_t ClientMqttSn::subscribe(uint8_t qos, const char *sztopic, bool bshortto
 
   MqttMessage *m = m_client_connection.messages.add_message(MqttMessage::Activity::subscribing) ;
   if (!m){
+    EPRINT("Send subscribe: Too may in-flight messages\n") ;
     return 0 ; // Too many in-flight messages
   }
   
@@ -1071,7 +1039,6 @@ uint16_t ClientMqttSn::subscribe(uint8_t qos, const char *sztopic, bool bshortto
 
   MqttTopic *t = m_client_connection.topics.reg_topic(sztopic, mid) ;
   if (t->get_id() > 0 && t->is_subscribed()){
-    DPRINT("INFO: Subscription to topic %s is already registered with an ID %u\n", sztopic, t->get_id());
     return false;
   }
 
@@ -1093,7 +1060,7 @@ uint16_t ClientMqttSn::subscribe(uint8_t qos, uint16_t topicid, uint8_t topictyp
 
   // Check if topic exists for defined topic
   if (topictype == FLAG_DEFINED_TOPIC_ID && !m_predefined_topics.get_topic(topicid)){
-    EPRINT("Topic ID %u is not a predefined topic id for subscription\n", topicid) ;
+    EPRINT("Send subscribe: Topic ID %u is not a predefined topic id for subscription\n", topicid) ;
     return 0;
   }
 
@@ -1150,7 +1117,7 @@ bool ClientMqttSn::disconnect(uint16_t sleep_duration)
 
   MqttMessage *m = m_client_connection.messages.add_message(MqttMessage::Activity::disconnecting) ;
   if (!m){
-    EPRINT("Too many in-flight messages\n") ;
+    EPRINT("Send disconnect: Too many in-flight messages\n") ;
     return false ;
   }
   
@@ -1187,12 +1154,10 @@ bool ClientMqttSn::publish_noqos(uint8_t gwid, uint16_t topicid, uint8_t topicty
   m_buff[4] = 0 ;
   uint8_t len = payload_len + MQTT_PUBLISH_HDR_LEN ;
   if (payload_len > (m_pDriver->get_payload_width() - MQTT_PUBLISH_HDR_LEN)){
-    EPRINT("Payload of %u bytes is too long for publish\n", payload_len) ;
+    EPRINT("Send publish: Payload of %u bytes is too long for publish\n", payload_len) ;
     return false ;
   }
   memcpy(m_buff+MQTT_PUBLISH_HDR_LEN,payload, payload_len);
-
-  DPRINT("NOQOS - topicid %u, topictype %u, flags %X\n",topicid,topictype,m_buff[0]) ;
 
   MqttGwInfo *gw = get_gateway(gwid) ;
   if (!gw) return false ;
@@ -1200,14 +1165,14 @@ bool ClientMqttSn::publish_noqos(uint8_t gwid, uint16_t topicid, uint8_t topicty
   if(topictype == FLAG_SHORT_TOPIC_NAME ||
      topictype == FLAG_DEFINED_TOPIC_ID){
     if (!addrwritemqtt(gw->get_address(), MQTT_PUBLISH, m_buff, len)){
-      EPRINT("Failed to send QoS -1 message\n") ;
+      EPRINT("Send publish: Failed to send QoS -1 message\n") ;
       return false ;
     }
   }else if (topictype == FLAG_NORMAL_TOPIC_ID){
-    EPRINT("QoS -1 cannot support normal topic IDs\n") ;
+    EPRINT("Send publish: QoS -1 cannot support normal topic IDs\n") ;
     return false ;
   }else{
-    EPRINT("QoS -1 unknown topic type") ;
+    EPRINT("Send publish: QoS -1 unknown topic type") ;
     return false ;
   }
   return true ;
@@ -1233,13 +1198,13 @@ uint16_t ClientMqttSn::publish(uint8_t qos, uint16_t topicid, uint16_t topictype
   if (qos > 2) return false ; // Invalid QoS
 
   if (payload_len > (m_pDriver->get_payload_width() - MQTT_PUBLISH_HDR_LEN)){
-    EPRINT("Payload of %u bytes is too long for publish\n", payload_len) ;
+    EPRINT("Send publish: Payload of %u bytes is too long for publish\n", payload_len) ;
     return 0 ;
   }
   
   MqttMessage *m = m_client_connection.messages.add_message(MqttMessage::Activity::publishing) ;
   if (!m){
-    EPRINT("PUBLISH: Too many in-flight messages\n") ;
+    EPRINT("Send publish: Too many in-flight messages\n") ;
     return 0 ;
   }
   m_buff[0] = (retain?FLAG_RETAIN:0) |
@@ -1282,7 +1247,7 @@ bool ClientMqttSn::connect(uint8_t gwid, bool will, bool clean, uint16_t keepali
 #ifndef ARDUINO
     pthread_mutex_unlock(&m_mqttlock) ;
 #endif
-    EPRINT("Gateway ID unknown") ;
+    EPRINT("Send connect: Gateway ID unknown") ;
     return false ;
   }
   // Copy connection details
@@ -1304,9 +1269,15 @@ bool ClientMqttSn::connect(uint8_t gwid, bool will, bool clean, uint16_t keepali
 #if DEBUG
   char addrdbg[(PACKET_DRIVER_MAX_ADDRESS_LEN*2)+1];
   addr_to_straddr(gw->get_address(), addrdbg, m_pDriver->get_address_len()) ;
-  DPRINT("Connecting to gateway %d at address %s\n", gwid, addrdbg) ;
 #endif
+  // Clear out any pending messages (mostly search messages)
+  // to provide room for the connection
+  m_client_connection.messages.clear_queue() ;
   MqttMessage *m = m_client_connection.messages.add_message(MqttMessage::Activity::willtopic) ;
+  if (!m){
+    EPRINT("Send connect: Cannot establish a new message for server connection\n");
+    return false ;
+  }
   m_client_connection.set_state(MqttConnection::State::connecting) ;
   m->set_message(MQTT_CONNECT, m_buff, 4+len) ;
   if (!will){
@@ -1371,7 +1342,7 @@ bool ClientMqttSn::set_willtopic(const wchar_t *topic, uint8_t qos, bool retain)
   char willtopic[PACKET_DRIVER_MAX_PAYLOAD - MQTT_WILLTOPIC_HDR_LEN +1] ;
   size_t len = wcslen(topic) ;
   if ((uint8_t)len > m_pDriver->get_payload_width() - MQTT_WILLTOPIC_HDR_LEN){
-    EPRINT("Will topic too long for payload\n") ;
+    EPRINT("Set will topic: Will topic too long for payload\n") ;
     return false ;
   }
 
@@ -1388,7 +1359,7 @@ bool ClientMqttSn::set_willmessage(const wchar_t *message)
   size_t maxlen = m_pDriver->get_payload_width() - MQTT_WILLMSG_HDR_LEN ;
 
   if (wcslen(message) > maxlen){
-    EPRINT("Will message too long for payload, truncating message\n") ;
+    EPRINT("Set will message: Will message too long for payload, truncating message\n") ;
     return false ;
   }
   
