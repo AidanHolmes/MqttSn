@@ -95,6 +95,24 @@ uint16_t MqttMessageCollection::get_new_messageid()
 MqttMessage* MqttMessageCollection::add_message(MqttMessage::Activity state)
 {
   uint16_t messpos = m_queuetail ;
+#ifdef DEBUG
+  uint16_t dbg_queue_size = 0 ;
+  if (m_queuehead <= m_queuetail) dbg_queue_size = m_queuetail - m_queuehead ;
+  else dbg_queue_size = MQTT_MESSAGES_INFLIGHT - (m_queuehead - m_queuetail) ;
+  DPRINT("MESSAGE COLLECTION (0x%X): Head: %u, Tail: %u, Queue size: %u, Remaining %u\n", (uint32_t)this, m_queuehead, m_queuetail, dbg_queue_size, MQTT_MESSAGES_INFLIGHT - dbg_queue_size) ;
+  if (MQTT_MESSAGES_INFLIGHT - dbg_queue_size <= 1){
+    DPRINT("MESSAGE COLLECTION (0x%X): Full queue -\n", (uint32_t)this) ;
+    for (uint16_t i=0; i < MQTT_MESSAGES_INFLIGHT; i++){
+      DPRINT("\tMessage %u, type: %s, is active: %s, has content %s, is external %s, is sending %s\n",
+	     i,
+	     mqtt_code_str(m_messages[i].get_topic_type()),
+	     m_messages[i].is_active()?"yes":"no",
+	     m_messages[i].has_content()?"yes":"no",
+	     m_messages[i].is_external()?"yes":"no",
+	     m_messages[i].is_sending()?"yes":"no") ;
+    }
+  }
+#endif
   do{
     if (!m_messages[messpos].is_active()){
       // This message is inactive

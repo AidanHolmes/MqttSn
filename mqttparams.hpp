@@ -29,7 +29,7 @@
 #define MQTT_MAX_GATEWAYS 5
 #endif
 #ifndef MQTT_MESSAGES_INFLIGHT
-#define MQTT_MESSAGES_INFLIGHT 5
+#define MQTT_MESSAGES_INFLIGHT 20
 #endif
 
 #define MQTT_PROTOCOL 0x01
@@ -85,7 +85,7 @@
 #define MQTT_WILLTOPICRESP 0x1B
 #define MQTT_WILLMSGRESP 0x1D
 #ifdef DEBUG
-const char* mqtt_code_str(uint8_t code)
+inline const char* mqtt_code_str(uint8_t code)
 {
   switch(code){
   case MQTT_ADVERTISE: return "MQTT_ADVERTISE" ;

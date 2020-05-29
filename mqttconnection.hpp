@@ -73,8 +73,8 @@ public:
   void set_mosquitto_mid(int mid){m_mosmid = mid ;}
   int get_mosquitto_mid(){return m_mosmid;}
 
-  bool state_timeout(uint16_t timeout);
-  uint16_t state_timeout_count(){return m_attempts;}
+  //bool state_timeout(uint16_t timeout);
+  //uint16_t state_timeout_count(){return m_attempts;}
 
   bool has_expired(time_t timeout);
   bool has_failed(uint16_t max_attempts){return m_attempts >= max_attempts;}

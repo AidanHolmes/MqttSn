@@ -198,11 +198,13 @@ bool ServerMqttSn::server_publish(MqttConnection *con, uint16_t messageid, uint1
     break;
   default:
     pthread_mutex_unlock(&m_mosquittolock) ;
+    EPRINT("PUBLISH: Unknown topic type\n") ;
     return false ;
   }
 
   MqttMessage *m = con->messages.add_message(MqttMessage::Activity::publishing);
   if (!m){ // cannot allocate a message, server is out of space
+    EPRINT("PUBLISH: Cannot create new message, returning congestion error\n") ;
     buff[4] = MQTT_RETURN_CONGESTION ;
     writemqtt(con, MQTT_PUBACK, buff, 5) ;
     pthread_mutex_unlock(&m_mosquittolock) ;
@@ -1250,8 +1252,8 @@ bool ServerMqttSn::manage_connections()
 	  // There's an active message to process
 	  if (!m->is_sending()){
 	    // Write the message to client
-	    DPRINT("MANAGE CONNECTION: Sending MQTT message %u, Message ID %u, length %u to client %s\n",
-		   m->get_message_type(),
+	    DPRINT("MANAGE CONNECTION: Sending MQTT message %s, Message ID %u, length %u to client %s\n",
+		   mqtt_code_str(m->get_message_type()),
 		   m->get_message_id(),
 		   m->get_message_len(),
 		   con->get_client_id());
@@ -1279,8 +1281,8 @@ bool ServerMqttSn::manage_connections()
 		m->set_inactive();
 	      }else{
 		// Write the message again
-		DPRINT("MANAGE CONNECTION: Resending MQTT message %u, Message ID %u, length %u\n",
-		       m->get_message_type(),
+		DPRINT("MANAGE CONNECTION: Resending MQTT message %s, Message ID %u, length %u\n",
+		       mqtt_code_str(m->get_message_type()),
 		       m->get_message_id(),
 		       m->get_message_len());
 		writemqtt(con,

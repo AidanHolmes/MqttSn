@@ -19,14 +19,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef DEBUG
-#define DPRINT(x,...) fprintf(stdout,x,##__VA_ARGS__)
-#define EPRINT(x,...) fprintf(stderr,x,##__VA_ARGS__)
-#else
-#define DPRINT(x,...)
-#define EPRINT(x,...)
-#endif
-
 MqttTopic::MqttTopic()
 {
   reset();
@@ -125,7 +117,6 @@ MqttTopic* MqttTopicCollection::reg_topic(const char *sztopic, uint16_t messagei
   for (p = topics; p; p = p->next()){
     if (strcmp(p->get_topic(), sztopic) == 0){
       // topic exists
-      DPRINT("Topic %s already exists for collection\n", sztopic) ;
       return p ;
     }
     insert_at = p ; // Save last valid topic pointer
@@ -175,7 +166,6 @@ MqttTopic* MqttTopicCollection::create_topic(const char *sztopic, uint16_t topic
     for (p = topics; p; p = p->next()){
       if (p->get_id() == topicid){
 	// topic exists
-	DPRINT("Topic %s, ID %u already exists for collection\n", p->get_topic(), topicid) ;
 	return NULL ;
       }
       insert_at = p ; // Save last valid topic pointer
@@ -206,13 +196,11 @@ MqttTopic* MqttTopicCollection::add_topic(const char *sztopic, uint16_t messagei
   for (p = topics; p; p = p->next()){
     if (strcmp(p->get_topic(), sztopic) == 0){
       // topic exists
-      DPRINT("Topic %s already exists for collection\n", sztopic) ;
       return p ;
     }
     // Add 1 to be unique
     if (p->get_id() >= available_id) available_id = p->get_id() + 1 ;
     insert_at = p ; // Save last valid topic pointer
-    //DPRINT("Add topic: searching topics, found %s at ID %u. Available ID now %u\n", p->get_topic(), p->get_id(), available_id) ;
   }
   // If collection was to run a long time with creation and deletion of topics then
   // the ID count will overflow! Overflows in 18 hours if requested every second
@@ -305,7 +293,6 @@ MqttTopic* MqttTopicCollection::get_topic(uint16_t topicid)
 MqttTopic* MqttTopicCollection::get_topic(const char *sztopic)
 {
   if (!topics){
-    DPRINT("No topics with name %s in collection to find from get_topic\n", sztopic);
     return NULL ;
   }
   for (MqttTopic *it = topics; it; it = it->next()){

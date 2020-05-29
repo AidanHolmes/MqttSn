@@ -324,7 +324,8 @@ void loop() {
     if (last_time + message_frequency < t) {
       last_time = t ;
       printf(".") ;
-      mqtt.publish(2, willtopic_id, FLAG_NORMAL_TOPIC_ID, (uint8_t *)"Online", 6, false);
+      if (willtopic_id > 0)
+	mqtt.publish(2, willtopic_id, FLAG_NORMAL_TOPIC_ID, (uint8_t *)"Online", 6, false);
     }
   }
   mqtt.manage_connections() ;
