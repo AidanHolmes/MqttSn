@@ -25,7 +25,6 @@
 #include <stdlib.h>
 #include <locale.h>
 
-
 ClientMqttSn::ClientMqttSn()
 {
   strcpy(m_szclient_id, "CL") ;  
@@ -146,10 +145,14 @@ void ClientMqttSn::received_pubrel(uint8_t *sender_address, uint8_t *data, uint8
     return ;
   }
 
-  // This is the final comms for a QoS 2 message. Close message
-  m->set_inactive() ;
-
-  writemqtt(&m_client_connection, MQTT_PUBCOMP, data, 2);
+  // This is the final comms for a QoS 2 message.
+  if (writemqtt(&m_client_connection, MQTT_PUBCOMP, data, 2)){
+    DPRINT("PUBREL: Writing PUBCOMP to server\n") ;
+    m->set_inactive() ; // Close message
+  }else{
+    EPRINT("PUBREL: writemqtt failed to send PUBCOMP\n") ;
+  }
+    
 }
 
 void ClientMqttSn::received_pubcomp(uint8_t *sender_address, uint8_t *data, uint8_t len)
@@ -843,6 +846,9 @@ bool ClientMqttSn::manage_connections()
 		      m->get_message_type(),
 		      m->get_message(), m->get_message_len())){
 	  m->sending() ; // Flag as sending
+	  DPRINT("MANAGE CONNECTION: WriteMqtt success\n") ;
+	}else{
+	  EPRINT("MANAGE CONNECTION: WriteMqtt failed\n") ;
 	}
       }
     }else{

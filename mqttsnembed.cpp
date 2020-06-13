@@ -148,12 +148,13 @@ void MqttSnEmbed::queue_received(const uint8_t *addr,
 
 bool MqttSnEmbed::dispatch_queue()
 {
-  bool ret = true ;
   uint8_t queue_ptr = m_queue_head ;
-  bool failed = false ;
-  
-  for ( ; ;){ // it's a do...while loop
-    failed = false ;
+
+#ifndef ARDUINO
+  pthread_mutex_lock(&m_mqttlock) ;
+#endif
+
+  do{ 
     if (m_queue[queue_ptr].set){
       switch(m_queue[queue_ptr].messageid){
       case MQTT_ADVERTISE:
@@ -291,18 +292,15 @@ bool MqttSnEmbed::dispatch_queue()
 			 m_queue[queue_ptr].message_len) ;
       }
     }
-#ifndef ARDUINO
-    pthread_mutex_lock(&m_mqttlock) ;
-#endif
-    if (!failed) m_queue[queue_ptr].set = false ;
+
+    m_queue[queue_ptr].set = false ;
     queue_ptr++;
     if (queue_ptr >= MQTT_MAX_QUEUE) queue_ptr = 0 ;
+  }while(queue_ptr != m_queue_head);
 #ifndef ARDUINO
     pthread_mutex_unlock(&m_mqttlock) ;
 #endif
-    if (queue_ptr == m_queue_head) break;
-  }
-  return ret ;
+  return true ;
 }
 
 bool MqttSnEmbed::writemqtt(MqttConnection *con,

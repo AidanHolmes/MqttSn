@@ -43,7 +43,7 @@ void MqttMessage::sending()
   }else{
     m_sent = true;
     m_lasttry=TIMENOW;
-    m_attempts=1;
+    m_attempts=0;
     // Set DUP flag for repeat messages
     if (m_attempts == 1 &&
 	(m_message_cache_typeid == MQTT_SUBSCRIBE ||
@@ -103,9 +103,10 @@ MqttMessage* MqttMessageCollection::add_message(MqttMessage::Activity state)
   if (MQTT_MESSAGES_INFLIGHT - dbg_queue_size <= 1){
     DPRINT("MESSAGE COLLECTION (0x%X): Full queue -\n", (uint32_t)this) ;
     for (uint16_t i=0; i < MQTT_MESSAGES_INFLIGHT; i++){
-      DPRINT("\tMessage %u, type: %s, is active: %s, has content %s, is external %s, is sending %s\n",
+      DPRINT("\tMessage %u, type: %s, length %u, is active: %s, has content %s, is external %s, is sending %s\n",
 	     i,
-	     mqtt_code_str(m_messages[i].get_topic_type()),
+	     mqtt_code_str(m_messages[i].get_message_type()),
+	     m_messages[i].get_message_len(),
 	     m_messages[i].is_active()?"yes":"no",
 	     m_messages[i].has_content()?"yes":"no",
 	     m_messages[i].is_external()?"yes":"no",

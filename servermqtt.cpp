@@ -599,14 +599,14 @@ void ServerMqttSn::received_pingresp(uint8_t *sender_address, uint8_t *data, uin
 
 void ServerMqttSn::received_pingreq(uint8_t *sender_address, uint8_t *data, uint8_t len)
 {
-  // regardless of client or gateway just send the ACK
+  // Only respond to connected clients
   pthread_mutex_lock(&m_mosquittolock) ;
   MqttConnection *con = search_connection_address(sender_address) ;
   if (con){
     con->update_activity() ;
+    writemqtt(con, MQTT_PINGRESP, NULL, 0) ;
   }
   
-  addrwritemqtt(sender_address, MQTT_PINGRESP, NULL, 0) ;
   pthread_mutex_unlock(&m_mosquittolock) ; 
 }
 
@@ -614,7 +614,7 @@ void ServerMqttSn::received_searchgw(uint8_t *sender_address, uint8_t *data, uin
 {
   uint8_t buff[1] ;
 
-  DPRINT("SEARCHGW: {radius = %u}\n", data[0]) ;
+  DPRINT("SEARCHGW: {radius = %u, broker connected %s}\n", data[0], m_broker_connected?"yes":"no") ;
 
   // Ignore radius value. This is a gw so respond with
   // a broadcast message back.
@@ -760,7 +760,10 @@ void ServerMqttSn::received_connect(uint8_t *sender_address, uint8_t *data, uint
   con->duration = (data[2] << 8) | data[3] ; // MSB assumed
   con->set_address(sender_address, m_pDriver->get_address_len()) ;
   con->set_send_topics(false) ;
-  
+
+  // Remove any historic messages
+  con->messages.clear_queue() ;
+
   // If clean flag is set then remove all topics and will data
   if (((FLAG_CLEANSESSION & data[0]) > 0)){
     con->topics.free_topics() ;
@@ -977,6 +980,7 @@ void ServerMqttSn::initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *
     mosquitto_lib_version(&major, &minor, &revision) ;
     
     DPRINT("Init: Mosquitto server connected %d.%d.%d\n", major, minor, revision) ;
+    m_broker_connected = true ; // GDB hack
 #endif
   
     mosquitto_message_callback_set(m_pmosquitto, gateway_message_callback) ;
@@ -1261,6 +1265,8 @@ bool ServerMqttSn::manage_connections()
 			 m->get_message_type(),
 			 m->get_message(), m->get_message_len())){
 	      m->sending() ; // Acknowledge message is sending
+	    }else{
+	      EPRINT("MANAGE CONNECTION: writemqtt failed\n");
 	    }
 	  }else{ // Already sending the active message, check retries
 	    if (m->has_expired(m_Tretry)){

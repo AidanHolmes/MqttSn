@@ -47,10 +47,10 @@ spiHw spi;
 ClientMqttSn mqtt ;
 RF24Driver drv ;
 
-const int pin_ce = 12; // Pi
+const int pin_ce = 27; // Pi
 //const int pin_ce = PA1; //STM32
 //const int pin_ce = 2; // Teensy
-const uint8_t pin_irq = 13; // Pi
+const uint8_t pin_irq = 17; // Pi
 //const uint8_t pin_irq = PB0; //STM32
 //const uint8_t pin_irq = 15; // Teensy
 const uint8_t pin_cs = 0 ; // Pi

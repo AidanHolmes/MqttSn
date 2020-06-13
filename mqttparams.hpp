@@ -84,6 +84,7 @@
 #define MQTT_PINGRESP 0x17
 #define MQTT_WILLTOPICRESP 0x1B
 #define MQTT_WILLMSGRESP 0x1D
+
 #ifdef DEBUG
 inline const char* mqtt_code_str(uint8_t code)
 {

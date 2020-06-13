@@ -173,7 +173,7 @@ int main(int argc, char **argv)
   drv.set_channel(opt_channel) ; // 2.400GHz + channel MHz
   drv.set_data_rate(opt_speed) ; 
 
-  //print_state(&drv) ;
+  print_state(&drv) ;
   
   // Working loop
   for ( ; ; ){
