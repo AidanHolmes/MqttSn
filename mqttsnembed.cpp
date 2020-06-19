@@ -29,7 +29,7 @@ MqttSnEmbed::MqttSnEmbed()
 {
   m_queue_head = 0 ;
 
-  m_Tretry = 10; // sec
+  m_Tretry = 1; // sec
   m_Nretry = 5 ; // attempts
 
   m_pDriver = NULL ;
@@ -92,7 +92,7 @@ bool MqttSnEmbed::initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *a
 #ifndef ARDUINO
   pthread_mutexattr_t attr ;
   pthread_mutexattr_init(&attr);
-  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK) ;
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE) ;
   if (pthread_mutex_init(&m_mqttlock, &attr) != 0){
     EPRINT("MQTT mutex creation failed\n") ;
     return false;

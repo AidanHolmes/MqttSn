@@ -56,13 +56,12 @@ const uint8_t pin_irq = 17; // Pi
 const uint8_t pin_cs = 0 ; // Pi
 //const uint8_t pin_cs = PA4 ; // STM32
 //const uint8_t pin_cs = 4 ; // Teensy
-const int opt_channel = 0;
+const int opt_channel = 76;
 const int opt_ack = 0;
 const bool opt_block = false ;
 const int opt_speed = RF24_1MBPS ; // macro options available in library header
 uint8_t opt_rf24broadcast[ADDR_WIDTH] ;
 uint8_t opt_rf24address[ADDR_WIDTH];
-const bool opt_listen = true ;
 
 void setup() {
 
@@ -72,7 +71,7 @@ void setup() {
     exit(0);
   }
   spi.setMode(0) ;
-  spi.setSpeed(1000000);
+  spi.setSpeed(4000000);
   spi.setBitOrder(false);
   spi.setCSHigh(false);
 
@@ -194,8 +193,8 @@ void print_ard_state(NordicRF24 *pRadio)
 bool bconnecting = false;
 unsigned long last_time = 0;
 unsigned long last_search = 0;
-const unsigned long search_frequency = 10 ;
-const unsigned long message_frequency = 10 ; // seconds
+const unsigned long search_frequency = 30 ;
+const unsigned long message_frequency = 30 ; // seconds
 uint16_t willtopic_mid = 0;
 uint16_t willtopic_id = 0;
 

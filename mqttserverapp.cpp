@@ -34,7 +34,7 @@ RF24Driver *pdrv = NULL ;
 
 int opt_irq = 0,
   opt_ce = 0,
-  opt_channel = 0,
+  opt_channel = 76,
   opt_cname = 0,
   opt_speed = 1,
   opt_ack = 0;
@@ -150,7 +150,7 @@ int main(int argc, char **argv)
 
   // 1 KHz = 1000 Hz
   // 1 MHz = 1000 KHz
-  spi.setSpeed(6000000) ;
+  spi.setSpeed(4000000) ;
   drv.set_spi(&spi) ;
   drv.set_timer(&pi) ;
 

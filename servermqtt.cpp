@@ -27,7 +27,7 @@ ServerMqttSn::ServerMqttSn()
 {
   pthread_mutexattr_t attr ;
   pthread_mutexattr_init(&attr);
-  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK) ;
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE) ;
   pthread_mutex_init(&m_mosquittolock, &attr) ;
 
   m_gwid = 0 ;
@@ -81,7 +81,13 @@ void ServerMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
   if (!m_mosquitto_initialised){
     EPRINT("PUBLISH: Gateway is not connected to the Mosquitto server to process Publish\n") ;
     buff[4] = MQTT_RETURN_CONGESTION;
-    addrwritemqtt(sender_address, MQTT_PUBACK, buff, 5) ;
+    if(addrwritemqtt(sender_address, MQTT_PUBACK, buff, 5)){
+      DPRINT("PUBLISH: Sending MQTT_PUBACK to client for message ID = %u\n",
+	     messageid) ;
+    }else{
+      EPRINT("PUBLISH: Failed to send MQTT_PUBACK to client for message ID = %u\n",
+	     messageid) ;
+    }
     return ;
   }
   
@@ -92,7 +98,13 @@ void ServerMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
     if (topic_type == FLAG_NORMAL_TOPIC_ID){
       EPRINT("PUBLISH: Client sent normal topic ID %u for -1 QoS message\n", topicid);
       buff[4] = MQTT_RETURN_INVALID_TOPIC ;
-      addrwritemqtt(sender_address, MQTT_PUBACK, buff, 5) ;
+      if (addrwritemqtt(sender_address, MQTT_PUBACK, buff, 5)){
+	DPRINT("PUBLISH: Sending MQTT_PUBACK to client for message ID = %u\n",
+	       messageid) ;
+      }else{
+	EPRINT("PUBLISH: Failed to send MQTT_PUBACK to client for message ID = %u\n",
+	       messageid) ;
+      }
       return ;
     }
     // Just publish and forget for QoS -1
@@ -113,7 +125,13 @@ void ServerMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
       if (!t){
 	EPRINT("PUBLISH: Cannot find topic %u in the pre-defined list\n", topicid) ;
 	buff[4] = MQTT_RETURN_INVALID_TOPIC ;
-	addrwritemqtt(sender_address, MQTT_PUBACK, buff, 5) ;
+	if (addrwritemqtt(sender_address, MQTT_PUBACK, buff, 5)){
+	  DPRINT("PUBLISH: Sending MQTT_PUBACK to client for message ID = %u\n",
+		 messageid) ;
+	}else{
+	  EPRINT("PUBLISH: Failed to send MQTT_PUBACK to client for message ID = %u\n",
+		 messageid) ;
+	}
 	return ;
       }
       // Publish with QoS 1 to server
@@ -177,7 +195,15 @@ bool ServerMqttSn::server_publish(MqttConnection *con, uint16_t messageid, uint1
     if (!topic){
       EPRINT("PUBLISH: Predefined topic id %u unrecognised\n", topicid);
       buff[4] = MQTT_RETURN_INVALID_TOPIC ;
-      writemqtt(con, MQTT_PUBACK, buff, 5) ;
+      if (writemqtt(con, MQTT_PUBACK, buff, 5)){
+	DPRINT("PUBLISH: Sending MQTT_PUBACK to client %s for message ID = %u\n",
+	       con->get_client_id(),
+	       messageid) ;
+      }else{
+	EPRINT("PUBLISH: Failed to send MQTT_PUBACK to client %s for message ID = %u\n",
+	       con->get_client_id(),
+	       messageid) ;
+      }
       pthread_mutex_unlock(&m_mosquittolock) ;
       return false;
     }
@@ -189,7 +215,13 @@ bool ServerMqttSn::server_publish(MqttConnection *con, uint16_t messageid, uint1
     if (!topic || topicid == 0){
       EPRINT("PUBLISH: Client topic id %d unknown to gateway\n", topicid) ;
       buff[4] = MQTT_RETURN_INVALID_TOPIC ;
-      writemqtt(con, MQTT_PUBACK, buff, 5) ;
+      if (writemqtt(con, MQTT_PUBACK, buff, 5)){
+	DPRINT("PUBLISH: Sending MQTT_PUBACK to client %s for message ID = %u\n",
+	       con->get_client_id(), messageid) ;
+      }else{
+	EPRINT("PUBLISH: Failed to send MQTT_PUBACK to client %s for message ID = %u\n",
+	       con->get_client_id(), messageid) ;
+      }
       pthread_mutex_unlock(&m_mosquittolock) ;
       return false;
     }
@@ -206,7 +238,13 @@ bool ServerMqttSn::server_publish(MqttConnection *con, uint16_t messageid, uint1
   if (!m){ // cannot allocate a message, server is out of space
     EPRINT("PUBLISH: Cannot create new message, returning congestion error\n") ;
     buff[4] = MQTT_RETURN_CONGESTION ;
-    writemqtt(con, MQTT_PUBACK, buff, 5) ;
+    if (writemqtt(con, MQTT_PUBACK, buff, 5)){
+      DPRINT("PUBLISH: Sending MQTT_PUBACK to client %s for message ID = %u\n",
+	     con->get_client_id(), messageid) ;
+    }else{
+      EPRINT("PUBLISH: Failed to send MQTT_PUBACK to client %s for message ID = %u\n",
+	     con->get_client_id(), messageid) ;
+    }
     pthread_mutex_unlock(&m_mosquittolock) ;
     return false ;
   }
@@ -223,7 +261,13 @@ bool ServerMqttSn::server_publish(MqttConnection *con, uint16_t messageid, uint1
     m->set_inactive() ;
     EPRINT("PUBLISH: Mosquitto failed %d, params - Topic: %s, len %u, retain %s\n", ret, ptopic, len, retain?"yes":"no");
     buff[4] = MQTT_RETURN_CONGESTION ;
-    writemqtt(con, MQTT_PUBACK, buff, 5) ;
+    if (writemqtt(con, MQTT_PUBACK, buff, 5)){
+      DPRINT("PUBLISH: Sending MQTT_PUBACK to client %s for message ID = %u\n",
+	     con->get_client_id(), messageid) ;
+    }else{
+      EPRINT("PUBLISH: Failed to send MQTT_PUBACK to client %s for message ID = %u\n",
+	     con->get_client_id(), messageid) ;
+    }
     pthread_mutex_unlock(&m_mosquittolock) ;
     return false ;
   }
@@ -260,7 +304,13 @@ void ServerMqttSn::received_pubrel(uint8_t *sender_address, uint8_t *data, uint8
   m->set_inactive() ; // Complete the message
   
   con->update_activity() ;
-  writemqtt(con, MQTT_PUBCOMP, data, 2) ;
+  if (writemqtt(con, MQTT_PUBCOMP, data, 2)){
+    DPRINT("PUBREL: Sending MQTT_PUBCOMP to client %s for message ID %u\n",
+	   con->get_client_id(), messageid) ;
+  }else{
+    EPRINT("PUBREL: Failed to send MQTT_PUBCOMP to client %s for message ID %u\n",
+	   con->get_client_id(), messageid) ;
+  }
   pthread_mutex_unlock(&m_mosquittolock) ;  
 }
 
@@ -391,7 +441,13 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
   if (!m_mosquitto_initialised){
     EPRINT("SUBSCRIBE: Gateway is not connected to the Mosquitto server to process Subscribe\n") ;
     buff[5] = MQTT_RETURN_CONGESTION;
-    writemqtt(con, MQTT_SUBACK, buff, 5) ;
+    if (writemqtt(con, MQTT_SUBACK, buff, 5)){
+      DPRINT("SUBSCRIBE: Sending MQTT_SUBACK to client %s for message ID %u\n",
+	     con->get_client_id(), messageid) ;
+    }else{
+      EPRINT("SUBSCRIBE: Failed to send MQTT_SUBACK to client %s for message ID %u\n",
+	     con->get_client_id(), messageid) ;
+    }
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
@@ -421,7 +477,13 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
       EPRINT("SUBSCRIBE: Topic %u unknown for predefined client subscription\n", topicid) ;
       // Invalid topic, send client SUBACK with error
       buff[5] = MQTT_RETURN_INVALID_TOPIC ;
-      writemqtt(con, MQTT_SUBACK, buff, 6) ;
+      if (writemqtt(con, MQTT_SUBACK, buff, 6)){
+	DPRINT("SUBSCRIBE: Sending MQTT_SUBACK to client %s for message ID %u\n",
+	       con->get_client_id(), messageid) ;
+      }else{
+	EPRINT("SUBSCRIBE: Failed to send MQTT_SUBACK to client %s for message ID %u\n",
+	       con->get_client_id(), messageid) ;
+      }
       pthread_mutex_unlock(&m_mosquittolock) ;
       return ;
     }
@@ -431,7 +493,13 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     // Shouldn't be possible to reach here
     EPRINT("SUBSCRIBE: Unknown topic type %u from client\n", topic_type) ;
     buff[5] = MQTT_RETURN_INVALID_TOPIC ;
-    writemqtt(con, MQTT_SUBACK, buff, 6) ;
+    if (writemqtt(con, MQTT_SUBACK, buff, 6)){
+      DPRINT("SUBSCRIBE: Sending MQTT_SUBACK to client %s for message ID %u\n",
+	     con->get_client_id(), messageid) ;
+    }else{
+      EPRINT("SUBSCRIBE: Failed to send MQTT_SUBACK to client %s for message ID %u\n",
+	     con->get_client_id(), messageid) ;
+    }
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
@@ -441,7 +509,13 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
     buff[1] = topicid >> 8 ;
     buff[2] = topicid & 0x00FF ;
     buff[5] = MQTT_RETURN_ACCEPTED;
-    writemqtt(con, MQTT_SUBACK, buff, 6) ;
+    if (writemqtt(con, MQTT_SUBACK, buff, 6)){
+      DPRINT("SUBSCRIBE: Sending MQTT_SUBACK to client %s for message ID %u\n",
+	     con->get_client_id(), messageid) ;
+    }else{
+      EPRINT("SUBSCRIBE: Failed to send MQTT_SUBACK to client %s for message ID %u\n",
+	     con->get_client_id(), messageid) ;
+    }
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
@@ -470,14 +544,26 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
       DPRINT("%02X ", buff[di]);
     DPRINT("]\n") ;
 #endif
-    writemqtt(con, MQTT_SUBACK, buff, 6) ;
+    if (writemqtt(con, MQTT_SUBACK, buff, 6)){
+      DPRINT("SUBSCRIBE: Sending MQTT_SUBACK to client %s for message ID %u\n",
+	     con->get_client_id(), messageid) ;
+    }else{
+      EPRINT("SUBSCRIBE: Failed to send MQTT_SUBACK to client %s for message ID %u\n",
+	     con->get_client_id(), messageid) ;
+    }
   }else{
     // Don't set a topic ID if topic is a wildcard
     //    con->set_sub_entities(t->is_wildcard()?0:t->get_id(), messageid, qos) ;
     MqttMessage *m = con->messages.add_message(MqttMessage::Activity::subscribing) ;
     if (!m){
       buff[5] = MQTT_RETURN_CONGESTION;
-      writemqtt(con, MQTT_SUBACK, buff, 6) ;
+      if (writemqtt(con, MQTT_SUBACK, buff, 6)){
+	DPRINT("SUBSCRIBE: Sending MQTT_SUBACK to client %s for message ID %u\n",
+	       con->get_client_id(), messageid) ;
+      }else{
+	EPRINT("SUBSCRIBE: Failed to send MQTT_SUBACK to client %s for message ID %u\n",
+	       con->get_client_id(), messageid) ;
+      }
     }else{
       m->set_topic_id(t->get_id()) ;
       m->set_topic_type(topic_type) ;
@@ -535,7 +621,13 @@ void ServerMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
   response[2] = data[2] ; // Echo back the messageid received
   response[3] = data[3] ; // Echo back the messageid received
   response[4] = MQTT_RETURN_ACCEPTED ;
-  writemqtt(con, MQTT_REGACK, response, 5) ;
+  if (writemqtt(con, MQTT_REGACK, response, 5)){
+    DPRINT("REGISTER: Sending MQTT_REGACK to client %s for message ID %u\n",
+	   con->get_client_id(), messageid) ;
+  }else{
+    EPRINT("REGISTER: Failed to send MQTT_REGACK to client %s for message ID %u\n",
+	   con->get_client_id(), messageid) ;
+  }
   pthread_mutex_unlock(&m_mosquittolock) ;
 }
 
@@ -604,7 +696,9 @@ void ServerMqttSn::received_pingreq(uint8_t *sender_address, uint8_t *data, uint
   MqttConnection *con = search_connection_address(sender_address) ;
   if (con){
     con->update_activity() ;
-    writemqtt(con, MQTT_PINGRESP, NULL, 0) ;
+    if (!writemqtt(con, MQTT_PINGRESP, NULL, 0)){
+      EPRINT("PINGREG: Failed to send ping response (IO if not ACKs enabled)\n") ;
+    }
   }
   
   pthread_mutex_unlock(&m_mosquittolock) ; 
@@ -621,7 +715,9 @@ void ServerMqttSn::received_searchgw(uint8_t *sender_address, uint8_t *data, uin
   if (m_broker_connected){
     buff[0] = m_gwid ;
     pthread_mutex_lock(&m_mosquittolock) ;
-    addrwritemqtt(sender_address, MQTT_GWINFO, buff, 1) ;
+    if (!addrwritemqtt(sender_address, MQTT_GWINFO, buff, 1)){
+      EPRINT("SEARCHGW: Failed to send GWINFO") ;
+    }
     pthread_mutex_unlock(&m_mosquittolock) ;
   }
 
@@ -791,7 +887,11 @@ void ServerMqttSn::received_connect(uint8_t *sender_address, uint8_t *data, uint
     // No need for WILL setup, just CONNACK
     uint8_t buff[1] ;
     buff[0] = MQTT_RETURN_ACCEPTED ;
-    writemqtt(con, MQTT_CONNACK, buff, 1) ;
+    if (writemqtt(con, MQTT_CONNACK, buff, 1)){
+      DPRINT("CONNECT: Sending MQTT_CONNACK to client %s\n", con->get_client_id());
+    }else{
+      EPRINT("CONNECT: Failed to send MQTT_CONNACK to client %s\n", con->get_client_id()) ;
+    }
     con->set_state(MqttConnection::State::connected) ;
   }
   pthread_mutex_unlock(&m_mosquittolock) ;
@@ -850,7 +950,13 @@ void ServerMqttSn::received_willtopic(uint8_t *sender_address, uint8_t *data, ui
     EPRINT("WILLTOPIC: received zero len topic\n") ; 
     buff[0] = MQTT_RETURN_ACCEPTED ;
     con->set_state(MqttConnection::State::connected) ;
-    writemqtt(con, MQTT_CONNACK, buff, 1) ;
+    if (writemqtt(con, MQTT_CONNACK, buff, 1)){
+      DPRINT("WILLTOPIC: sending MQTT_CONNACK to client %s\n",
+	     con->get_client_id()) ;
+    }else{
+      DPRINT("WILLTOPIC: failed to send MQTT_CONNACK to client %s\n",
+	     con->get_client_id()) ;
+    }
     m->set_inactive() ; // Complete message
   }else{
     memcpy(utf8, data+1, len-1) ;
@@ -882,7 +988,13 @@ void ServerMqttSn::received_willmsg(uint8_t *sender_address, uint8_t *data, uint
   if (!con){
     EPRINT("WILLMSG: could not find the client connection\n") ;
     buff[0] = MQTT_RETURN_CONGESTION ; // There is no "who are you?" response so this will do
-    writemqtt(con, MQTT_CONNACK, buff, 1) ;
+    if (writemqtt(con, MQTT_CONNACK, buff, 1)){
+      DPRINT("WILLMSG: sending MQTT_CONNACK to client %s\n",
+	     con->get_client_id()) ;
+    }else{
+      EPRINT("WILLMSG: failed to send MQTT_CONNACK to client %s\n",
+	     con->get_client_id()) ;
+    }
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
@@ -909,7 +1021,13 @@ void ServerMqttSn::received_willmsg(uint8_t *sender_address, uint8_t *data, uint
 
   // Client sent final will message
   buff[0] = MQTT_RETURN_ACCEPTED ;
-  writemqtt(con, MQTT_CONNACK, buff, 1) ;
+  if (writemqtt(con, MQTT_CONNACK, buff, 1)){
+    DPRINT("WILLMSG: Sending MQTT_CONNACK to client %s\n",
+	   con->get_client_id());
+  }else{
+    EPRINT("WILLMSG: failed to send MQTT_CONNACK to client %s\n",
+	   con->get_client_id());
+  } 
   con->set_state(MqttConnection::State::connected) ;
 
   pthread_mutex_unlock(&m_mosquittolock) ;
@@ -938,7 +1056,13 @@ void ServerMqttSn::received_disconnect(uint8_t *sender_address, uint8_t *data, u
   }
   con->update_activity() ;
 
-  writemqtt(con, MQTT_DISCONNECT, NULL, 0) ;
+  if (writemqtt(con, MQTT_DISCONNECT, NULL, 0)){
+    DPRINT("DISCONNECT: sending MQTT_DISCONNECT to client %s\n",
+	   con->get_client_id()) ;
+  }else{
+    EPRINT("DISCONNECT: failed to send MQTT_DISCONNECT to client %s\n",
+	   con->get_client_id()) ;
+  }
   pthread_mutex_unlock(&m_mosquittolock) ;
 }
 
@@ -1172,7 +1296,11 @@ void ServerMqttSn::gateway_publish_callback(struct mosquitto *m,
   case FLAG_QOS1:
     mess->set_inactive() ;
     buff[4] = MQTT_RETURN_ACCEPTED ;
-    gateway->writemqtt(con, MQTT_PUBACK, buff, 5) ;
+    if (gateway->writemqtt(con, MQTT_PUBACK, buff, 5)){
+      DPRINT("PUBLISH CALLBACK: Sending MQTT_PUBACK to client %s, for message ID %u\n", con->get_client_id(), messageid) ;
+    }else{
+      EPRINT("PUBLISH CALLBACK: Failed to send MQTT_PUBACK to client %s, for message ID %u\n", con->get_client_id(), messageid) ;
+    }
     break ;
   case FLAG_QOS2:
     mess->set_message(MQTT_PUBREC, buff+2, 2) ;
@@ -1245,7 +1373,9 @@ bool ServerMqttSn::manage_connections()
 	con->set_state(MqttConnection::State::disconnected) ;
 	// Attempt to send a disconnect
 	DPRINT("MANAGE CONNECTION: Disconnecting lost client: %s\n", con->get_client_id()) ;
-	writemqtt(con, MQTT_DISCONNECT, NULL, 0) ;
+	if (!writemqtt(con, MQTT_DISCONNECT, NULL, 0)){
+	  EPRINT("MANAGE CONNECTION: IO failed to send MQTT_DISCONNECT to client %s\n", con->get_client_id()) ;
+	}
 	// Remove all pending messages
 	con->messages.clear_queue() ;
 	// Send the client will
@@ -1266,7 +1396,10 @@ bool ServerMqttSn::manage_connections()
 			 m->get_message(), m->get_message_len())){
 	      m->sending() ; // Acknowledge message is sending
 	    }else{
-	      EPRINT("MANAGE CONNECTION: writemqtt failed\n");
+	      EPRINT("MANAGE CONNECTION: IO failure - writemqtt failed for message %s, Message ID %u to client %s\n",
+		     mqtt_code_str(m->get_message_type()),
+		     m->get_message_id(),
+		     con->get_client_id());
 	    }
 	  }else{ // Already sending the active message, check retries
 	    if (m->has_expired(m_Tretry)){
@@ -1279,22 +1412,29 @@ bool ServerMqttSn::manage_connections()
 		  // Disconnected so clear any pending messages in queue
 		  con->messages.clear_queue() ;
 		}
-		DPRINT("MANAGE CONNECTION: Message failed to deliver %s, Message ID %u, length %u\n",
+		DPRINT("MANAGE CONNECTION: Message failed to deliver %s, Message ID %u, length %u to client %s\n",
 		       mqtt_code_str(m->get_message_type()),
 		       m->get_message_id(),
-		       m->get_message_len());
+		       m->get_message_len(),
+		       con->get_client_id());
 		// Set this message to inactive and process the next message
 		m->set_inactive();
 	      }else{
 		// Write the message again
-		DPRINT("MANAGE CONNECTION: Resending MQTT message %s, Message ID %u, length %u\n",
+		DPRINT("MANAGE CONNECTION: Resending MQTT message %s, Message ID %u, length %u, to client %s\n",
 		       mqtt_code_str(m->get_message_type()),
 		       m->get_message_id(),
-		       m->get_message_len());
-		writemqtt(con,
-			  m->get_message_type(),
-			  m->get_message(),
-			  m->get_message_len()) ;
+		       m->get_message_len(),
+		       con->get_client_id());
+		if (!writemqtt(con,
+			       m->get_message_type(),
+			       m->get_message(),
+			       m->get_message_len())){
+		  EPRINT("MANAGE CONNECTION: IO failed to send message %s, message ID %u, to client %s\n",
+			 mqtt_code_str(m->get_message_type()),
+			 m->get_message_id(),
+			 con->get_client_id());
+		}
 	      }
 	    }
 	  }
@@ -1346,6 +1486,7 @@ bool ServerMqttSn::advertise(uint16_t duration)
     pthread_mutex_unlock(&m_mosquittolock) ;
     return true ;
   }
+  EPRINT("Advertise cannot send due to an error\n") ;
   
   pthread_mutex_unlock(&m_mosquittolock) ;
   return false ;
@@ -1398,6 +1539,7 @@ bool ServerMqttSn::ping(const char *szclientid)
     pthread_mutex_unlock(&m_mosquittolock) ;
     return true ;
   }
+  EPRINT("Failed to send ping to client %s\n", szclientid) ;
   pthread_mutex_unlock(&m_mosquittolock) ;
   return false ; // failed to send the ping
 }

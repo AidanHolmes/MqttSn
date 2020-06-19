@@ -372,7 +372,7 @@ int main(int argc, char **argv)
 
   // 1 KHz = 1000 Hz
   // 1 MHz = 1000 KHz
-  spi.setSpeed(6000000) ;
+  spi.setSpeed(4000000) ;
   drv.set_spi(&spi) ;
   drv.set_timer(&pi);
 
