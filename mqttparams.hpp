@@ -86,6 +86,7 @@
 #define MQTT_WILLMSGRESP 0x1D
 
 #ifdef DEBUG
+#include <stdio.h>
 inline const char* mqtt_code_str(uint8_t code)
 {
   switch(code){
@@ -93,6 +94,7 @@ inline const char* mqtt_code_str(uint8_t code)
   case MQTT_GWINFO: return "MQTT_GWINFO";
   case MQTT_CONNECT: return "MQTT_CONNECT" ;
   case MQTT_WILLTOPICREQ: return "MQTT_WILLTOPICREQ" ;
+  case MQTT_WILLMSGREQ: return "MQTT_WILLMSGREQ" ;
   case MQTT_REGISTER:return "MQTT_REGISTER";
   case MQTT_PUBLISH: return "MQTT_PUBLISH";
   case MQTT_PUBCOMP: return "MQTT_PUBCOMP" ;
@@ -118,7 +120,9 @@ inline const char* mqtt_code_str(uint8_t code)
   default:
     break;
   }
-  return "UNKNOWN" ;
+  static char szError[20];
+  sprintf(szError, "UNKNOWN %u", code) ;
+  return szError ;
 }
 #endif
 // MQTT size macros - driver agnostic

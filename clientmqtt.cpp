@@ -708,6 +708,9 @@ void ClientMqttSn::received_willtopicreq(uint8_t *sender_address, uint8_t *data,
     default: // Ignore other values and set to max QOS
       m_buff[0] = FLAG_QOS2 ;
     }
+    if (m_client_connection.get_will_retain()){
+      m_buff[0] |= FLAG_RETAIN ;
+    }
     // Any overflow of size should have been checked so shouldn't need to check again here.
     memcpy(m_buff+1,m_client_connection.get_will_topic(), willtopiclen) ;
     m->set_message(MQTT_WILLTOPIC, m_buff, willtopiclen+1) ;

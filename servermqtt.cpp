@@ -152,6 +152,7 @@ void ServerMqttSn::received_publish(uint8_t *sender_address, uint8_t *data, uint
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     EPRINT("PUBLISH: No registered connection for client\n") ;
+    addrwritemqtt(sender_address, MQTT_DISCONNECT, NULL, 0);
     pthread_mutex_unlock(&m_mosquittolock) ;
     return;
   }
@@ -291,6 +292,7 @@ void ServerMqttSn::received_pubrel(uint8_t *sender_address, uint8_t *data, uint8
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     EPRINT("PUBREL: No registered connection for client\n") ;
+    addrwritemqtt(sender_address, MQTT_DISCONNECT, NULL, 0);
     pthread_mutex_unlock(&m_mosquittolock) ;
     return;
   }
@@ -326,6 +328,7 @@ void ServerMqttSn::received_puback(uint8_t *sender_address, uint8_t *data, uint8
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     EPRINT("PUBACK: No registered connection for client\n") ;
+    addrwritemqtt(sender_address, MQTT_DISCONNECT, NULL, 0);
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
@@ -361,6 +364,7 @@ void ServerMqttSn::received_pubrec(uint8_t *sender_address, uint8_t *data, uint8
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     EPRINT("PUBREC: No registered connection for client\n") ;
+    addrwritemqtt(sender_address, MQTT_DISCONNECT, NULL, 0);
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
@@ -392,6 +396,7 @@ void ServerMqttSn::received_pubcomp(uint8_t *sender_address, uint8_t *data, uint
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     EPRINT("PUBCOMP: No registered connection for client\n") ;
+    addrwritemqtt(sender_address, MQTT_DISCONNECT, NULL, 0);
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
@@ -433,6 +438,7 @@ void ServerMqttSn::received_subscribe(uint8_t *sender_address, uint8_t *data, ui
   MqttConnection *con = search_connection_address(sender_address);
   if (!con){
     EPRINT("SUBSCRIBE: No registered connection for client\n") ;
+    addrwritemqtt(sender_address, MQTT_DISCONNECT, NULL, 0);
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
@@ -608,6 +614,7 @@ void ServerMqttSn::received_register(uint8_t *sender_address, uint8_t *data, uin
   MqttConnection *con = search_connection_address(sender_address) ;
   if (!con){
     EPRINT("REGISTER: Cannot find a connection for the client\n") ;
+    addrwritemqtt(sender_address, MQTT_DISCONNECT, NULL, 0);
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
@@ -645,6 +652,7 @@ void ServerMqttSn::received_regack(uint8_t *sender_address, uint8_t *data, uint8
   MqttConnection *con = search_connection_address(sender_address) ;
   if (!con){
     EPRINT("REGACK: No registered connection for client\n") ;
+    addrwritemqtt(sender_address, MQTT_DISCONNECT, NULL, 0);
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
@@ -844,6 +852,7 @@ void ServerMqttSn::received_connect(uint8_t *sender_address, uint8_t *data, uint
   }
   if (!con){
     EPRINT("CONNECT: Cannot create a new connection record for client %s\n", szClientID) ;
+    addrwritemqtt(sender_address, MQTT_DISCONNECT, NULL, 0);
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ; // something went wrong with the allocation
   }
@@ -924,17 +933,18 @@ void ServerMqttSn::received_willtopic(uint8_t *sender_address, uint8_t *data, ui
   uint8_t buff[1] ;
   if (!con){
     EPRINT("WILLTOPIC: could not find the client connection\n") ;
+    addrwritemqtt(sender_address, MQTT_DISCONNECT, NULL, 0); // Client could be out of sync, disconnect
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
   
   con->update_activity() ; // update known client activity
-  if (con->get_state() != MqttConnection::State::connecting){
+  //  if (con->get_state() != MqttConnection::State::connecting){
     // WILLTOPIC is only used during connection setup. This is out of sequence
-    EPRINT("WILLTOPIC: Out of sequence WILLTOPIC received\n") ;
-    pthread_mutex_unlock(&m_mosquittolock) ;
-    return ;
-  }
+    //EPRINT("WILLTOPIC: Out of sequence WILLTOPIC received\n") ;
+    //pthread_mutex_unlock(&m_mosquittolock) ;
+    //return ;
+  //}
   // Get message as the active message in queu
   MqttMessage *m = con->messages.get_active_message() ;
   if (!m){
@@ -987,25 +997,18 @@ void ServerMqttSn::received_willmsg(uint8_t *sender_address, uint8_t *data, uint
   uint8_t buff[1] ;
   if (!con){
     EPRINT("WILLMSG: could not find the client connection\n") ;
-    buff[0] = MQTT_RETURN_CONGESTION ; // There is no "who are you?" response so this will do
-    if (writemqtt(con, MQTT_CONNACK, buff, 1)){
-      DPRINT("WILLMSG: sending MQTT_CONNACK to client %s\n",
-	     con->get_client_id()) ;
-    }else{
-      EPRINT("WILLMSG: failed to send MQTT_CONNACK to client %s\n",
-	     con->get_client_id()) ;
-    }
+    addrwritemqtt(sender_address, MQTT_DISCONNECT, NULL, 0);
     pthread_mutex_unlock(&m_mosquittolock) ;
     return ;
   }
 
   con->update_activity() ; // update known client activity
-  if (con->get_state() != MqttConnection::State::connecting){
+  //if (con->get_state() != MqttConnection::State::connecting){
     // WILLMSG is only used during connection setup. This is out of sequence
-    EPRINT("WILLMSG: Out of sequence WILLMSG received\n") ;
-    pthread_mutex_unlock(&m_mosquittolock) ;
-    return ;
-  }
+    //EPRINT("WILLMSG: Out of sequence WILLMSG received\n") ;
+    //pthread_mutex_unlock(&m_mosquittolock) ;
+    //return ;
+  //}
   // Connection messages should be the only active messages
   MqttMessage *m = con->messages.get_active_message() ;
   if (!m){
@@ -1405,6 +1408,11 @@ bool ServerMqttSn::manage_connections()
 	    if (m->has_expired(m_Tretry)){
 	      if (m->has_failed(m_Nretry)){
 		// Connection has failed retry attempts
+		DPRINT("MANAGE CONNECTION: Message failed to deliver %s, Message ID %u, length %u to client %s\n",
+		       mqtt_code_str(m->get_message_type()),
+		       m->get_message_id(),
+		       m->get_message_len(),
+		       con->get_client_id());
 		if (m->get_activity() == MqttMessage::Activity::willtopic ||
 		    m->get_activity() == MqttMessage::Activity::willmessage){
 		  // Couldn't complete a connection
@@ -1412,11 +1420,6 @@ bool ServerMqttSn::manage_connections()
 		  // Disconnected so clear any pending messages in queue
 		  con->messages.clear_queue() ;
 		}
-		DPRINT("MANAGE CONNECTION: Message failed to deliver %s, Message ID %u, length %u to client %s\n",
-		       mqtt_code_str(m->get_message_type()),
-		       m->get_message_id(),
-		       m->get_message_len(),
-		       con->get_client_id());
 		// Set this message to inactive and process the next message
 		m->set_inactive();
 	      }else{
