@@ -128,8 +128,14 @@ void MqttSnEmbed::queue_received(const uint8_t *addr,
 {
   // Len is too long, could be invalid or corrupt data packet
   // This function has to keep in mind that any old packet could be picked up
-  if (len > PACKET_DRIVER_MAX_PAYLOAD) return ;
-  if (messageid > MQTT_WILLMSGRESP) return ;
+  if (len > PACKET_DRIVER_MAX_PAYLOAD){
+    DPRINT("Bad packet received. Length %u\n", len);
+    return ;
+  }
+  if (messageid > MQTT_WILLMSGRESP){
+    DPRINT("Bad packet, message ID out of range: %u\n", messageid) ;
+    return ;
+  }
 #ifndef ARDUINO
   pthread_mutex_lock(&m_mqttlock) ;
 #endif

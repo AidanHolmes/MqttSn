@@ -8,6 +8,10 @@ CFLAGS = $(CXXFLAGS)
 LIBS = -lwiringPi -lpihw -lrf24 -lpthread
 LDFLAGS = -L$(HWLIBS) -L$(DRIVER)
 
+SRCS_LIB = clientmqtt.cpp mqttsnembed.cpp mqttconnection.cpp mqtttopic.cpp servermqtt.cpp
+H_LIB = $(SRCS_LIB:.cpp=.hpp)
+OBJS_LIB = $(SRCS_LIB:.cpp=.o)
+
 SRCS_AUTOMQTTCLIENT = autoclient.cpp clientmqtt.cpp mqttsnembed.cpp mqttconnection.cpp mqtttopic.cpp
 OBJS_AUTOMQTTCLIENT = $(SRCS_AUTOMQTTCLIENT:.cpp=.o) 
 
@@ -20,9 +24,10 @@ OBJS_MQTTSERVER = $(SRCS_MQTTSERVER:.cpp=.o)
 MQTTAUTOCLIENTEXE = mqttautoclient
 MQTTSERVEREXE = mqttsnserver
 MQTTCLIENTEXE = mqttsnclient
+ARCHIVE = libmqttsn.a
 
 .PHONY: all
-all: $(MQTTSERVEREXE) $(MQTTCLIENTEXE) $(MQTTAUTOCLIENTEXE)
+all: $(MQTTSERVEREXE) $(MQTTCLIENTEXE) $(MQTTAUTOCLIENTEXE) $(ARCHIVE)
 
 $(MQTTSERVEREXE): $(OBJS_MQTTSERVER) $(OBJS_CMD) libhw librf24
 	$(CXX) $(LDFLAGS) $(OBJS_MQTTSERVER) $(OBJS_CMD) -lmosquitto $(LIBS) -o $@
@@ -32,6 +37,11 @@ $(MQTTCLIENTEXE): $(OBJS_MQTTCLIENT) $(OBJS_CMD) libhw librf24
 
 $(MQTTAUTOCLIENTEXE): $(OBJS_AUTOMQTTCLIENT) $(OBJS_CMD) libhw librf24
 		$(CXX) $(LDFLAGS) $(OBJS_AUTOMQTTCLIENT) $(OBJS_CMD) $(LIBS) -o $@
+
+$(ARCHIVE): $(OBJS_LIB)
+	ar r $@ $?
+
+$(OBJS_LIB): $(H_LIB)
 
 .PHONY: libhw
 libhw:
@@ -43,4 +53,4 @@ librf24:
 
 .PHONY: clean
 clean:
-	rm -f *.o $(MQTTSERVEREXE) $(MQTTCLIENTEXE)
+	rm -f *.o $(MQTTSERVEREXE) $(MQTTAUTOCLIENTEXE) $(ARCHIVE) $(MQTTCLIENTEXE)

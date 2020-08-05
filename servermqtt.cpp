@@ -1091,6 +1091,17 @@ void ServerMqttSn::initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *
     EPRINT("Init: Cannot create a new mosquitto instance\n") ;
   }else{
 
+    mosquitto_message_callback_set(m_pmosquitto, gateway_message_callback) ;
+    mosquitto_connect_callback_set(m_pmosquitto, gateway_connect_callback) ;
+    mosquitto_disconnect_callback_set(m_pmosquitto, gateway_disconnect_callback);
+    mosquitto_publish_callback_set(m_pmosquitto, gateway_publish_callback) ;
+    mosquitto_subscribe_callback_set(m_pmosquitto, gateway_subscribe_callback) ;
+
+    // Set a will. TO DO: Make this configurable
+    char szGwWill[1024] ;
+    snprintf(szGwWill, 1024, "gateway/%u/status", m_gwid) ;
+    mosquitto_will_set(m_pmosquitto, szGwWill, 7, "Offline", 1, true) ;
+    
     // TO DO: add in config for the mosquitto server
     int ret = mosquitto_connect_async(m_pmosquitto, "localhost", 1883, 60) ;
     if (ret != MOSQ_ERR_SUCCESS){
@@ -1107,14 +1118,8 @@ void ServerMqttSn::initialise(uint8_t address_len, uint8_t *broadcast, uint8_t *
     mosquitto_lib_version(&major, &minor, &revision) ;
     
     DPRINT("Init: Mosquitto server connected %d.%d.%d\n", major, minor, revision) ;
-    m_broker_connected = true ; // GDB hack
 #endif
   
-    mosquitto_message_callback_set(m_pmosquitto, gateway_message_callback) ;
-    mosquitto_connect_callback_set(m_pmosquitto, gateway_connect_callback) ;
-    mosquitto_disconnect_callback_set(m_pmosquitto, gateway_disconnect_callback);
-    mosquitto_publish_callback_set(m_pmosquitto, gateway_publish_callback) ;
-    mosquitto_subscribe_callback_set(m_pmosquitto, gateway_subscribe_callback) ;
   }
 }
 
@@ -1334,7 +1339,21 @@ void ServerMqttSn::gateway_connect_callback(struct mosquitto *m,
   DPRINT("CONNECT CALLBACK: Mosquitto connect: %d\n", res) ;
   // Gateway connected to the broker
   gateway->lock_mosquitto();
-  if (res == 0) gateway->m_broker_connected = true ;
+  if (res == 0){
+    int mid = 0 ;
+    // Set a will. TO DO: Make this configurable
+    char szGwWill[1024] ;
+    snprintf(szGwWill, 1024, "gateway/%u/status", gateway->m_gwid) ;
+    gateway->m_broker_connected = true ;
+    mosquitto_publish(gateway->m_pmosquitto,
+		      &mid,
+		      szGwWill,
+		      6,
+		      "Online",
+		      1,
+		      true) ;
+  }
+    
   gateway->unlock_mosquitto();
 }
 

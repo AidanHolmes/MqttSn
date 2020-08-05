@@ -76,6 +76,10 @@ int main(int argc, char **argv)
     fprintf(stderr,"Failed to set signal handler\n") ;
     return EXIT_FAILURE ;
   }
+  if (sigaction(SIGTERM, &siginthandle, NULL) < 0){
+    fprintf(stderr,"Failed to set signal handler\n") ;
+    return EXIT_FAILURE ;
+  }
 
   while ((opt = getopt(argc, argv, optlist)) != -1) {
     switch (opt) {
